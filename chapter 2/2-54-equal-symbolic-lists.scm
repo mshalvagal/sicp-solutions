@@ -1,0 +1,17 @@
+(define (equal? a b)
+  (cond ((and (not (pair? a)) (not (pair? b)))
+         (eq? a b))
+        ((null? a) (null? b))
+        ((null? b) (null? a))
+        ((pair? (car a)) (and (pair? (car b))
+                              (equal? (car a) (car b))
+                              (equal? (cdr a) (cdr b))))
+        (else (and (eq? (car a) (car b))
+                   (equal? (cdr a) (cdr b))))))
+
+(display (equal? '(this is a list) '(this is a list))) (newline)
+(display (equal? '(this is a list) '(this (is a) list))) (newline)
+(display (equal? '(this (is (a)) list) '(this (is (a)) list))) (newline)
+
+(display ''abcd) (newline)
+(display (cdr ''abcd)) (newline)
