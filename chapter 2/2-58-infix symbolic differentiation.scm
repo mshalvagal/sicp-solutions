@@ -1,0 +1,72 @@
+(define (=number? expr num)
+  (and (number? expr) (= expr num)))
+
+(define (accumulate op initial sequence)
+  (if (null? sequence)
+      initial
+      (op (car sequence)
+          (accumulate op initial (cdr sequence)))))
+(define (append seq1 seq2)
+  (accumulate cons seq2 seq1))
+
+(define (make-sum a1 a2)
+  (cond ((=number? a1 0) a2)
+        ((=number? a2 0) a1)
+        ((and (number? a1) (number? a2)) (+ a1 a2))
+        (else (list a1 '+ a2))))
+
+(define (make-product m1 m2)
+  (cond ((or (=number? m1 0) (=number? m2 0)) 0)
+        ((=number? m1 1) m2)
+        ((=number? m2 1) m1)
+        ((and (number? m1) (number? m2)) (* m1 m2))
+        (else (list m1 '* m2))))
+
+(define (variable? x) (symbol? x))
+
+(define (same-variable? x1 x2)
+  (and (variable? x1) (variable? x2) (eq? x1 x2)))
+
+(define (sum? x)
+  (and (pair? x)
+       (not (null? (cdr x)))
+       (or (eq? '+ (cadr x))
+           (sum? (cddr x)))))
+(define (addend x) (car x))
+(define (augend x) 
+  (if (null? (cdddr x))
+      (caddr x)
+      (cddr x)))
+
+(define (product? x)
+  (and (pair? x) 
+       (eq? '* (cadr x))
+       (not (sum? x))))
+(define (multiplier x) (car x))
+(define (multiplicand x)
+  (if (null? (cdddr x))
+      (caddr x)
+      (cddr x)))
+
+(define (deriv expr var)
+  (cond ((number? expr) 0)
+        ((variable? expr)
+         (if (same-variable? expr var) 1 0))
+        ((sum? expr)
+         (make-sum (deriv (addend expr) var)
+                   (deriv (augend expr) var)))
+        ((product? expr)
+         (make-sum (make-product (multiplier expr)
+                                 (deriv (multiplicand expr) var))
+                   (make-product (deriv (multiplier expr) var)
+                                 (multiplicand expr))))
+        (else (display "Error - unknown expression"))))
+
+
+(display (deriv '(x + 3) 'x)) (newline)
+(display (deriv '(x * y) 'x)) (newline)
+(display (deriv '(x * y * (x + 3 + 2 * y)) 'x)) (newline)
+(display (deriv '(x + 3 * (x + y + 2)) 'x)) (newline)
+
+(display (deriv '(x * y * (x + 3 + 2 * x)) 'x)) (newline)
+
