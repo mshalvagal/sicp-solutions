@@ -19,10 +19,11 @@
                          (left-branch set)
                          (adjoin-set x (right-branch set))))))
 
-;the other function alsp produces the same result
-;but the alternate implementation calls the append function which is O(n),
+;the other function also produces the same result
+;but the alternate implementation calls the append function which is O(log n),
+;because the list size going into append is cut in half every call
 ;making the overall complexity O(n*log n)
-;this (second) implementation grows slower as O(log n)
+;this (second) implementation grows slower as O(n) (visits every node once)
 (define (tree->list tree)
   (define (copy-to-list tree result-list)
     (if (null? tree)
