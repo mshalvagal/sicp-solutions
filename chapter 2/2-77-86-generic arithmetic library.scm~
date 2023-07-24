@@ -1,3 +1,4 @@
+#lang sicp
 ;;Table operations
 (define (make-table)
   (let ((local-table (list '*table*)))
@@ -313,8 +314,12 @@
                          (addd (imag-part z1)
                                (imag-part z2)
                                (imag-part z3))))
-  (define (complex2real x) 
-    (make-real (contents (real-part x))))
+  (define (complex2real x)
+    (let* ((r (real-part x))
+           (type (type-tag r)))
+      (cond ((eq? type 'real) r)
+            ((is-lower? r 'real) (raise-loop r 'real))
+            (else (error "Unable to drop complex to real -- COMPLEX2REAL" x)))))
   ;;external interfaces
   (define (tag x) (attach-tag 'complex x))
   (put-coercion 'complex 'real complex2real)
