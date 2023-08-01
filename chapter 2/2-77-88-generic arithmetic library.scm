@@ -72,16 +72,16 @@
   (define (search-and-apply-op)
     (let* ((type-tags (map type-tag args))
            (proc (get op type-tags)))
-     (if proc
-         (apply proc (map contents args))
-         (let ((raised (raise-args (highest-type type-tags) args '())))
-           (if raised
-               (let* ((type-tags-raised (map type-tag raised))
-                      (alternate-proc (get op type-tags-raised)))
-                 (if alternate-proc
-                     (apply alternate-proc (map contents raised))
-                     (error "No suitable method found -- APPLY-GENERIC" (list op type-tags))))
-               (error "No suitable coercions found -- APPLY-GENERIC"))))))
+      (if proc
+          (apply proc (map contents args))
+          (let ((raised (raise-args (highest-type type-tags) args '())))
+            (if raised
+                (let* ((type-tags-raised (map type-tag raised))
+                       (alternate-proc (get op type-tags-raised)))
+                  (if alternate-proc
+                      (apply alternate-proc (map contents raised))
+                      (error "No suitable method found -- APPLY-GENERIC" (list op type-tags))))
+                (error "No suitable coercions found -- APPLY-GENERIC"))))))
   (let ((result (search-and-apply-op)))
     (if (in-tower? result)
         (drop result)
@@ -336,7 +336,7 @@
             ((is-lower? r 'real) (raise-loop r 'real))
             (else (error "Unable to drop complex to real -- COMPLEX2REAL" x)))))
   (define (complex2poly x)
-    (make-from-dense-termlist 'unbound (list (drop (tag x)))))
+    (make-from-coeffs 'unbound (list (drop (tag x)))))
   ;;external interfaces
   (define (tag x) (attach-tag 'complex x))
   (put-coercion 'complex 'real complex2real)
@@ -370,7 +370,7 @@
   ((get 'make-from-mag-ang 'complex) r a))
 
 ;;coercion tower
-(define coercion-tower '(integer rational real complex polynomial dense-termlist sparse-termlist))
+(define coercion-tower '(integer rational real complex polynomial))
 
 (define (raise-rec x types)
   (cond ((null? types) (error "Type not found in type tower -- RAISE-REC" (list x coercion-tower)))
@@ -410,20 +410,46 @@
       (filter-lowest-type coercion-tower type-list)))
 
 
+(define (install-term-package)
+  ;; internal procedures
+  ;; representation of terms
+  (define (make-term order coeff) (list order coeff))
+  (define (order-term term) (car term))
+  (define (coeff-term term) (cadr term))
+  (define (equ-term? t1 t2)
+    (and (equ? (order-term t1) (order-term t2))
+         (equ? (coeff-term t1) (coeff-term t2))))
+  ;; interface to rest of the system
+  (define (tag t) (attach-tag 'term t))
+  (put 'order '(term) order-term)
+  (put 'coeff '(term) coeff-term)
+  (put 'equ? '(term term) equ-term?)
+  (put 'make 'term
+       (lambda (order coeff) (tag (make-term order coeff))))
+  'done)
+(define (make-term order coeff)
+  ((get 'make 'term) order coeff))
+(define (order term)
+  (apply-generic 'order term))
+(define (coeff term)
+  (apply-generic 'coeff term))
+
+
 (define (install-sparse-term-package)
   ;; internal procedures
-  (define (build-from-paired-termlist terms result)
+  (define (the-empty-termlist) '())
+  (define (build-from-termlist terms result)
     (if (null? terms)
         result
-        (build-from-paired-termlist (cdr terms)
-                                    (insert-term (car terms) result))))
-  (define (build-from-dense-termlist terms term-order)
-    (cond ((null? terms) '())
-          ((=zero? (car terms)) (build-from-dense-termlist (cdr terms)
-                                                           (sub term-order (make-integer 1))))
-          (else (cons (make-term term-order (car terms))
-                      (build-from-dense-termlist (cdr terms)
-                                                 (sub term-order (make-integer 1)))))))
+        (build-from-termlist (cdr terms)
+                             (insert-term (car terms) result))))
+  (define (build-from-coeffs coeffs term-order)
+    (cond ((null? coeffs) (the-empty-termlist))
+          ((=zero? (car coeffs)) (build-from-coeffs (cdr coeffs)
+                                                    (sub term-order (make-integer 1))))
+          (else (cons (make-term term-order (car coeffs))
+                      (build-from-coeffs (cdr coeffs)
+                                         (sub term-order (make-integer 1)))))))
   (define (insert-term term terms)
     (if (empty-termlist? terms)
         (adjoin-term term (the-empty-termlist))
@@ -436,21 +462,151 @@
                  (adjoin-term term terms))
                 (else (adjoin-term (make-term this-order (add (coeff term) (coeff highest-term)))
                                    (rest-terms terms)))))))
-  ;; representation of terms and term lists
+  ;; representation of term lists
   (define (adjoin-term term term-list)
-    (if (=zero? (coeff term))
-        term-list
-        (cons term term-list)))
-  (define (the-empty-termlist) '())
+    (cond ((=zero? (coeff term)) term-list)
+          ((or (empty-termlist? term-list)
+               (greater? (order term) (order (first-term term-list))))
+           (cons term term-list))
+          (else (error "Cannot adjoin term of lower order than term list (use insert-term instead) -- ADJOIN-TERM"
+                       (list term term-list)))))
   (define (first-term term-list) (car term-list))
   (define (rest-terms term-list) (cdr term-list))
   (define (empty-termlist? term-list) (null? term-list))
-  (define (make-term order coeff) (list order coeff))
-  (define (order term) (car term))
-  (define (coeff term) (cadr term))
+  ;; coercion
+  (define (sparse2dense L)
+    ((get 'make-from-termlist 'dense-termlist) L))
+  ;; interface to rest of the system
+  (define (tag L) (attach-tag 'sparse-termlist L))
+  (put-coercion 'sparse-termlist 'dense-termlist sparse2dense)
+  (put 'first-term '(sparse-termlist) first-term)
+  (put 'rest-terms '(sparse-termlist)
+       (lambda (L) (tag (rest-terms L))))
+  (put 'adjoin-term 'sparse-termlist
+       (lambda (term L) (tag (adjoin-term term L))))
+  (put 'the-empty-termlist 'sparse-termlist
+       (lambda () (tag (the-empty-termlist))))
+  (put 'empty-termlist? '(sparse-termlist)
+       (lambda (L) (empty-termlist? L)))
+  (put 'make-from-termlist 'sparse-termlist
+       (lambda (terms) (tag (build-from-termlist terms (the-empty-termlist)))))
+  (put 'make-from-coeffs 'sparse-termlist
+       (lambda (coeffs) (tag (build-from-coeffs coeffs
+                                                (sub (make-integer (length coeffs))
+                                                     (make-integer 1))))))
+  'done)
+
+(define (install-dense-term-package)
+  ;; internal procedures
+  (define (list-order term-list)
+    (make-integer (- (length term-list) 1)))
+  (define (strip-leading-zeros terms)
+    (cond ((empty-termlist? terms) (the-empty-termlist))
+          ((not (=zero? (first-term terms))) terms)
+          (else (rest-terms terms))))
+  (define (build-from-termlist terms result)
+    (if (null? terms)
+        result
+        (build-from-termlist (cdr terms)
+                             (insert-term (car terms) result))))
+  (define (insert-term term terms)
+    (if (empty-termlist? terms)
+        (adjoin-term term (the-empty-termlist))
+        (let* ((highest-term (first-term terms))
+               (highest-order (order highest-term))
+               (this-order (order term)))
+          (cond ((greater? highest-order this-order)
+                 (adjoin-term highest-term (insert-term term (rest-terms terms))))
+                ((lesser? highest-order this-order)
+                 (adjoin-term term terms))
+                (else (adjoin-term (make-term this-order (add (coeff term) (coeff highest-term)))
+                                   (rest-terms terms)))))))
+  ;; representation of term lists
+  (define (adjoin-term term term-list)
+    (let ((term-order (order term))
+          (term-coeff (coeff term)))
+      (cond ((=zero? term-coeff) term-list)
+            ((equ? term-order (add (make-integer 1) (list-order term-list)))
+             (cons term-coeff term-list))
+            ((greater? term-order (list-order term-list))
+             (adjoin-term term (cons (make-integer 0) term-list)))
+            (else (error "Cannot adjoin term of lower order than term list -- ADJOIN-TERM"
+                         (list term term-list))))))
+  (define (the-empty-termlist) '())
+  (define (empty-termlist? term-list) (null? term-list))
+  (define (first-term term-list)
+    (cond ((empty-termlist? term-list)
+           (make-term (make-integer 0) (make-integer 0)))
+          ((=zero? (car term-list))
+           (first-term (cdr term-list)))
+          (else (make-term (list-order term-list)
+                           (car term-list)))))
+  (define (rest-terms term-list)
+    (let ((tail (cdr term-list)))
+      (cond ((empty-termlist? tail) tail)
+            ((=zero? (car tail)) (rest-terms tail))
+            (else tail))))
+  ;; coercion
+  (define (dense2sparse L)
+    ((get 'make-from-coeffs 'sparse-termlist) L))
+  ;; interface to rest of the system
+  (define (tag L) (attach-tag 'dense-termlist L))
+  (put 'first-term '(dense-termlist) first-term)
+  (put 'rest-terms '(dense-termlist)
+       (lambda (L) (tag (rest-terms L))))
+  (put 'adjoin-term 'dense-termlist
+       (lambda (term L) (tag (adjoin-term term L))))
+  (put 'the-empty-termlist 'dense-termlist
+       (lambda () (tag (the-empty-termlist))))
+  (put 'empty-termlist? '(dense-termlist) empty-termlist?)
+  (put 'make-from-termlist 'dense-termlist
+       (lambda (terms) (tag (build-from-termlist terms (the-empty-termlist)))))
+  (put 'make-from-coeffs 'dense-termlist (lambda (coeffs) (tag coeffs)))
+  (put-coercion 'dense-termlist 'sparse-termlist dense2sparse)
+  'done)
+
+(install-term-package)
+(install-sparse-term-package)
+(install-dense-term-package)
+(define (constant-term x) (apply-generic 'constant-term x))
+
+;;Polynomial library
+(define (install-polynomial-package)
+  ;; internal procedures
+  ;; representation of poly
+  (define (make-poly var termlist)
+    (cons var termlist))
+  (define (make-from-termlist var terms)
+    (make-poly var ((get 'make-from-termlist 'sparse-termlist) terms)))
+  (define (make-from-coeffs var terms)
+    (make-poly var ((get 'make-from-coeffs 'dense-termlist) terms)))
+  (define (variable p) (car p))
+  (define (term-list p) (cdr p))
+  (define (variable? x) (symbol? x))
+  (define (same-variable? x1 x2)
+    (and (variable? x1) (variable? x2)
+         (or (eq? x1 x2)
+             (eq? x1 'unbound)
+             (eq? x2 'unbound))))
+  (define (select-variable p1 p2)
+    (let ((v1 (variable p1))
+          (v2 (variable p2)))
+      (if (eq? v1 'unbound) v2 v1)))
+  ;; term-list operations
+  (define (first-term L)
+    (apply-generic 'first-term L))
+  (define (rest-terms L)
+    (apply-generic 'rest-terms L))
+  (define (empty-termlist? L)
+    (apply-generic 'empty-termlist? L))
+  (define (adjoin-term term term-list)
+    ((get 'adjoin-term (type-tag term-list)) term (contents term-list)))
+  (define (the-empty-termlist)
+    ((get 'the-empty-termlist 'sparse-termlist)))
+  ;; arithmetic ops on termlists
   (define (negate-terms L)
-    (mul-terms L (list (make-term (make-integer 0)
-                                  (make-integer -1)))))
+    (mul-term-by-all-terms (make-term (make-integer 0)
+                                      (make-integer -1)) L))
   (define (add-terms L1 L2)
     (cond ((empty-termlist? L1) L2)
           ((empty-termlist? L2) L1)
@@ -506,254 +662,29 @@
     (cond ((empty-termlist? L) (make-integer 0))
           ((=zero? (order (first-term L))) (coeff (first-term L)))
           (else (constant-term (rest-terms L)))))
-  ;; coercion
-  (define (count-zero-coeffs L result)
-    (if (or (empty-termlist? L) (empty-termlist? (rest-terms L)))
-        result
-        (let ((term-order (order (first-term L)))
-              (next-order (order (first-term (rest-terms L)))))
-          (count-zero-coeffs (rest-terms L)
-                             (sub (add result
-                                       (sub term-order next-order))
-                                  (make-integer 1))))))
-  (define (keep-as-sparse? L)
-    (if (empty-termlist? L)
-        #f
-        (let ((list-order (order (first-term L)))
-              (num-zeros (count-zero-coeffs L (make-integer 0))))
-          (store-as-sparse? list-order num-zeros))))
-  (define (sparse2dense L)
-    (if (keep-as-sparse? L)
-        (tag L)
-        ((get 'make-from-sparse-termlist 'dense-termlist) L)))
-  ;; interface to rest of the system
-  (define (tag L) (attach-tag 'sparse-termlist L))
-  (put-coercion 'sparse-termlist 'dense-termlist sparse2dense)
-  (put 'add '(sparse-termlist sparse-termlist) 
-       (lambda (L1 L2) (tag (add-terms L1 L2))))
-  (put 'sub '(sparse-termlist sparse-termlist) 
-       (lambda (L1 L2) (tag (sub-terms L1 L2))))
-  (put 'mul '(sparse-termlist sparse-termlist) 
-       (lambda (L1 L2) (tag (mul-terms L1 L2))))
-  (put 'div '(sparse-termlist sparse-termlist) 
-       (lambda (L1 L2)
-         (let ((result (div-terms L1 L2)))
-           (list (sparse2dense (car result))
-                 (sparse2dense (cadr result))))))
-  (put 'negate-terms '(sparse-termlist) 
-       (lambda (L) (tag (negate-terms L))))
-  (put '=zero? '(sparse-termlist) (lambda (L) (=zero-all-terms? L)))
-  (put 'equ? '(sparse-termlist sparse-termlist)
-       (lambda (L1 L2) (=zero-all-terms? (sub-terms L1 L1))))
-  (put 'constant-term '(sparse-termlist) (lambda (L) (constant-term L)))
-  (put 'make-from-sparse-termlist 'sparse-termlist
-       (lambda (terms) (tag (build-from-paired-termlist terms (the-empty-termlist)))))
-  (put 'make-from-dense-termlist 'sparse-termlist
-       (lambda (terms) (tag (build-from-dense-termlist terms
-                                                       (sub (make-integer (length terms))
-                                                            (make-integer 1))))))
-  'done)
-
-(define (store-as-sparse? num-terms num-zero-terms)
-  (lesser? (div num-terms (add num-zero-terms (make-real 0.01))) (make-integer 3)))
-
-(define (install-dense-term-package)
-  ;; internal procedures
-  (define (order term-list)
-    (make-integer (- (length term-list) 1)))
-  (define (the-empty-termlist) '())
-  (define (empty-termlist? term-list) (null? term-list))
-  (define (first-term term-list) (car term-list))
-  (define (rest-terms term-list) (cdr term-list))
-  (define (adjoin-term term term-list)
-    (cons term term-list))
-  (define (build-from-paired-termlist terms result)
-    (if (null? terms)
-        result
-        (let* ((term (car terms))
-               (term-order (car term))
-               (term-coeff (cadr term)))
-          (build-from-paired-termlist (cdr terms)
-                                      (insert-term term-coeff term-order result)))))
-  (define (insert-term term-coeff term-order terms)
-    (if (empty-termlist? terms)
-        (if (=zero? term-order)
-            (list term-coeff)
-            (adjoin-term term-coeff
-                         (insert-term (make-integer 0)
-                                      (sub term-order (make-integer 1))
-                                      terms)))
-        (let ((existing-order (order terms)))
-          (cond ((greater? existing-order term-order)
-                 (adjoin-term (car terms) (insert-term term-coeff term-order (cdr terms))))
-                ((lesser? existing-order term-order)
-                 (adjoin-term term-coeff (insert-term (make-integer 0)
-                                                      (sub term-order (make-integer 1))
-                                                      terms)))
-                (else (adjoin-term (add term-coeff (car terms)) (cdr terms)))))))
-  (define (strip-leading-zeros terms)
-    (cond ((empty-termlist? terms) (the-empty-termlist))
-          ((not (=zero? (first-term terms))) terms)
-          (else (rest-terms terms))))
-  ;; arithmetic ops
-  (define (negate-terms L)
-    (mul-terms L (list (make-integer -1))))
-  (define (add-terms L1 L2)
-    (cond ((empty-termlist? L1) L2)
-          ((empty-termlist? L2) L1)
-          (else
-           (let ((t1 (first-term L1))
-                 (t2 (first-term L2))
-                 (order1 (order L1))
-                 (order2 (order L2)))
-             (cond ((greater? order1 order2)
-                    (adjoin-term t1 (add-terms (rest-terms L1)
-                                               L2)))
-                   ((lesser? order1 order2)
-                    (adjoin-term t2 (add-terms L1
-                                               (rest-terms L2))))
-                   (else
-                    (adjoin-term (add t1 t2)
-                                 (add-terms (rest-terms L1)
-                                            (rest-terms L2)))))))))
-  (define (sub-terms L1 L2)
-    (add-terms L1 (negate-terms L2)))
-  (define (mul-terms L1 L2)
-    (if (empty-termlist? L1)
-        (the-empty-termlist)
-        (add-terms (append (mul-term-by-all-terms (first-term L1) L2) (zero-term-list (order L1)))
-                   (mul-terms (rest-terms L1) L2))))
-  (define (mul-term-by-all-terms t1 L)
-    (if (empty-termlist? L)
-        (the-empty-termlist)
-        (let ((t2 (first-term L)))
-          (adjoin-term (mul t1 t2)
-                       (mul-term-by-all-terms t1 (rest-terms L))))))
-  (define (div-terms L1 L2)
-    (if (empty-termlist? L1)
-        (list (the-empty-termlist) (the-empty-termlist))
-        (let* ((t1 (first-term L1))
-               (t2 (first-term L2))
-               (order1 (order L1))
-               (order2 (order L2)))
-          (if (greater? order2 order1)
-              (list (the-empty-termlist) L1)
-              (let* ((new-c (div t1 t2))
-                     (new-o (sub order1 order2))
-                     (new-c-neg (mul new-c (make-integer -1))))
-                (let* ((new-dividend (strip-leading-zeros (add-terms L1
-                                                                     (append (mul-term-by-all-terms new-c-neg L2) (zero-term-list new-o)))))
-                       (rest-of-result (div-terms new-dividend L2))
-                       (quotient (car rest-of-result))
-                       (remainder (cadr rest-of-result)))
-                  (list (adjoin-term new-c quotient) remainder)))))))
-  (define (zero-term-list n)
-    (if (=zero? n)
-        (the-empty-termlist)
-        (adjoin-term (make-integer 0)
-                     (zero-term-list (sub n (make-integer 1))))))
-  (define (=zero-all-terms? L)
-    (cond ((empty-termlist? L) #t)
-          ((not (=zero? (first-term L))) #f)
-          (else (=zero-all-terms? (rest-terms L)))))
-  (define (constant-term L)
-    (cond ((empty-termlist? L) (make-integer 0))
-          ((=zero? (order L)) (first-term L))
-          (else (constant-term (rest-terms L)))))
-  ;; coercion
-  (define (count-zero-coeffs L)
-    (if (empty-termlist? L)
-        (make-integer 0)
-        (add (if (=zero? (first-term L))
-                 (make-integer 1)
-                 (make-integer 0))
-             (count-zero-coeffs (rest-terms L)))))
-  (define (keep-as-sparse? L)
-    (if (empty-termlist? L)
-        #f
-        (let ((list-order (order (first-term L)))
-              (num-zeros (count-zero-coeffs L (make-integer 0))))
-          (store-as-sparse? list-order num-zeros))))
-  (define (to-best-representation L)
-    (if (store-as-sparse? (order L) (count-zero-coeffs L))
-        (dense2sparse L)
-        (tag L)))
-  (define (dense2sparse L)
-    ((get 'make-from-dense-termlist 'sparse-termlist) L))
-  ;; interface to rest of the system
-  (define (tag L) (attach-tag 'dense-termlist L))
-  (put-coercion 'dense-termlist 'sparse-termlist dense2sparse)
-  (put 'add '(dense-termlist dense-termlist) 
-       (lambda (L1 L2) (to-best-representation (add-terms L1 L2))))
-  (put 'sub '(dense-termlist dense-termlist) 
-       (lambda (L1 L2) (to-best-representation (sub-terms L1 L2))))
-  (put 'mul '(dense-termlist dense-termlist) 
-       (lambda (L1 L2) (to-best-representation (mul-terms L1 L2))))
-  (put 'div '(dense-termlist dense-termlist) 
-       (lambda (L1 L2)
-         (let ((result (div-terms L1 L2)))
-           (list (to-best-representation (car result))
-                 (to-best-representation (cadr result))))))
-  (put 'negate-terms '(dense-termlist) 
-       (lambda (L) (tag (negate-terms L))))
-  (put '=zero? '(dense-termlist) (lambda (L) (=zero-all-terms? L)))
-  (put 'equ? '(dense-termlist dense-termlist)
-       (lambda (L1 L2) (=zero-all-terms? (sub-terms L1 L1))))
-  (put 'constant-term '(dense-termlist) (lambda (L) (constant-term L)))
-  (put 'make-from-sparse-termlist 'dense-termlist
-       (lambda (terms) (tag (build-from-paired-termlist terms (the-empty-termlist)))))
-  (put 'make-from-dense-termlist 'dense-termlist
-       (lambda (terms) (tag terms)))
-  'done)
-
-(install-sparse-term-package)
-(install-dense-term-package)
-(define (constant-term x) (apply-generic 'constant-term x))
-
-;;Polynomial library
-(define (install-polynomial-package)
-  ;; internal procedures
-  ;; representation of poly
-  (define (make-poly var termlist)
-    (cons var termlist))
-  (define (make-from-sparse-termlist var terms)
-    (make-poly var ((get 'make-from-sparse-termlist 'sparse-termlist) terms)))
-  (define (make-from-dense-termlist var terms)
-    (make-poly var ((get 'make-from-dense-termlist 'dense-termlist) terms)))
-  (define (variable p) (car p))
-  (define (term-list p) (cdr p))
-  (define (variable? x) (symbol? x))
-  (define (same-variable? x1 x2)
-    (and (variable? x1) (variable? x2)
-         (or (eq? x1 x2)
-             (eq? x1 'unbound)
-             (eq? x2 'unbound))))
-  (define (select-variable p1 p2)
-    (let ((v1 (variable p1))
-          (v2 (variable p2)))
-      (if (eq? v1 'unbound) v2 v1)))
+  ;; polynomial wrappers for arithmetic ops
   (define (add-poly p1 p2)
     (if (same-variable? (variable p1) (variable p2))
         (make-poly (select-variable p1 p2)
-                   (add (term-list p1)
+                   (add-terms (term-list p1)
                         (term-list p2)))
         (error "Polynomials do not correspond to the same variable -- ADD-POLY" (list p1 p2))))
   (define (sub-poly p1 p2)
     (if (same-variable? (variable p1) (variable p2))
         (make-poly (select-variable p1 p2)
-                   (sub (term-list p1)
+                   (sub-terms (term-list p1)
                         (term-list p2)))
         (error "Polynomials do not correspond to the same variable -- SUB-POLY" (list p1 p2))))
   (define (mul-poly p1 p2)
     (if (same-variable? (variable p1) (variable p2))
         (make-poly (select-variable p1 p2)
-                   (mul (term-list p1)
+                   (mul-terms (term-list p1)
                         (term-list p2)))
         (error "Polynomials do not correspond to the same variable -- MUL-POLY" (list p1 p2))))
   (define (div-poly p1 p2)
     (if (same-variable? (variable p1) (variable p2))
         (let ((var (select-variable p1 p2))
-              (result (div (term-list p1) (term-list p2))))
+              (result (div-terms (term-list p1) (term-list p2))))
           (list (make-poly var (car result))
                 (make-poly var (cadr result))))
         (error "Polynomials do not correspond to the same variable -- DIV-POLY" (list p1 p2))))
@@ -762,32 +693,84 @@
       (if (is-lower? constant 'complex)
           (raise-loop constant 'complex)
           constant)))
+  ;; coercion
+  (define (count-zero-coeffs L result)
+    (cond ((empty-termlist? L) result)
+          ((empty-termlist? (rest-terms L))
+           (add result (order (first-term L))))
+          (else (let ((term-order (order (first-term L)))
+                      (next-order (order (first-term (rest-terms L)))))
+                  (count-zero-coeffs (rest-terms L)
+                                     (add (sub (sub term-order next-order)
+                                               (make-integer 1))
+                                          result))))))
+  (define (best-representation num-terms num-zero-terms)
+    (if (lesser? (div num-terms (add num-zero-terms (make-real 0.01)))
+                 (make-integer 3))
+        'sparse-termlist
+        'dense-termlist))
+  (define (to-best-representation L)
+    (if (empty-termlist? L)
+        L
+        (let ((current-repr (type-tag L))
+              (desired-repr (best-representation (add (order (first-term L)) (make-integer 1))
+                                                 (count-zero-coeffs L (make-integer 0)))))
+          (if (eq? current-repr desired-repr)
+              L
+              (let ((coercer (get-coercion current-repr desired-repr)))
+                (if coercer
+                    (coercer (contents L))
+                    (error "Missing coercion -- TO-BEST-REPRESENTATION" (list current-repr desired-repr))))))))
+  ;; Variable coercion
+  (define (select-principal-variable v1 v2)
+    (cond ((eq? v1 'unbound) v2)
+          ((eq? v2 'unbound) v1)
+          (else (let ((s1 (symbol->string v1))
+                      (s2 (symbol->string v2)))
+                  (if (string<=? s1 s2)
+                      v1
+                      v2)))))
+  (define (express-in principal-variable p)
+    (cond ((eq? principal-variable (variable p)) p)
+          ((eq? 'unbound (variable p)) (make-poly principal-variable (term-list p)))
+          (else (make-from-coeffs principal-variable (list (tag p))))))
+  (define (coerce-and-call p1 p2 op)
+    (let* ((principal (select-principal-variable (variable p1) (variable p2)))
+           (new-p1 (express-in principal p1))
+           (new-p2 (express-in principal p2)))
+      (op new-p1 new-p2)))
   ;; interface to rest of the system
-  (define (tag p) (attach-tag 'polynomial p))
+  (define (tag p)
+    (attach-tag 'polynomial
+                (make-poly (variable p)
+                           (to-best-representation (term-list p)))))
   (put-coercion 'polynomial 'complex poly2complex)
   (put 'add '(polynomial polynomial) 
-       (lambda (p1 p2) (tag (add-poly p1 p2))))
+       (lambda (p1 p2) (tag (coerce-and-call p1 p2 add-poly))))
   (put 'sub '(polynomial polynomial) 
-       (lambda (p1 p2) (tag (sub-poly p1 p2))))
+       (lambda (p1 p2) (tag (coerce-and-call p1 p2 sub-poly))))
   (put 'mul '(polynomial polynomial) 
-       (lambda (p1 p2) (tag (mul-poly p1 p2))))
+       (lambda (p1 p2) (tag (coerce-and-call p1 p2 mul-poly))))
   (put 'div '(polynomial polynomial) 
        (lambda (p1 p2)
-         (let ((result (div-poly p1 p2)))
+         (let ((result (coerce-and-call p1 p2 div-poly)))
            (list (drop (tag (car result)))
                  (drop (tag (cadr result)))))))
-  (put '=zero? '(polynomial) (lambda (x) (=zero? (term-list x))))
+  (put '=zero? '(polynomial) (lambda (x) (=zero-all-terms? (term-list x))))
   (put 'equ? '(polynomial polynomial)
-       (lambda (p1 p2) (=zero? (term-list (sub-poly p1 p2)))))
-  (put 'make-from-sparse-termlist 'polynomial
-       (lambda (var terms) (tag (make-from-sparse-termlist var terms))))
-  (put 'make-from-dense-termlist 'polynomial
-       (lambda (var terms) (tag (make-from-dense-termlist var terms))))
+       (lambda (p1 p2)
+         (and (same-variable? (variable p1) (variable p2))
+              (=zero-all-terms? (sub-terms (term-list p1)
+                                           (term-list p2))))))
+  (put 'make-from-termlist 'polynomial
+       (lambda (var terms) (tag (make-from-termlist var terms))))
+  (put 'make-from-coeffs 'polynomial
+       (lambda (var terms) (tag (make-from-coeffs var terms))))
   'done)
-(define (make-from-sparse-termlist var terms)
-  ((get 'make-from-sparse-termlist 'polynomial) var terms))
-(define (make-from-dense-termlist var terms)
-  ((get 'make-from-dense-termlist 'polynomial) var terms))
+(define (make-from-termlist var terms)
+  ((get 'make-from-termlist 'polynomial) var terms))
+(define (make-from-coeffs var terms)
+  ((get 'make-from-coeffs 'polynomial) var terms))
 
 
 ;;testing it all out
@@ -841,16 +824,16 @@
 (display (square-root (make-integer -1)))(newline)(newline)
 
 (display "TESTING -- sparse-and-dense-polynomial creation and arithmetic") (newline)
-(define p1 (make-from-sparse-termlist 'x (list (list (make-integer 2) (make-real 3))
-                                               (list (make-integer 0) (make-real 2.5)))))
-(define p2 (make-from-sparse-termlist 'x (list (list (make-integer 1) (make-real 3.5))
-                                               (list (make-integer 0) (make-real 4.5)))))
-(define p3 (make-from-sparse-termlist 'x (list (list (make-integer 0) (make-real 0.0))
-                                               (list (make-integer 3) (make-real 4.5)))))
-(define p4 (make-from-dense-termlist 'x (list (make-real 3) (make-integer 0) (make-real 2.5))))
-(define p5 (make-from-dense-termlist 'x (list (make-real 3.5) (make-real 4.5))))
-(define p6 (make-from-dense-termlist 'x (list (make-real 4.5) (make-integer 0) (make-integer 0) (make-real 0.0))))
+(define p1 (make-from-termlist 'x (list (make-term (make-integer 2) (make-real 3))
+                                        (make-term (make-integer 0) (make-real 2.5)))))
+(define p2 (make-from-termlist 'x (list (make-term (make-integer 1) (make-real 3.5))
+                                        (make-term (make-integer 0) (make-real 4.5)))))
+(define p4 (make-from-coeffs 'x (list (make-real 3) (make-integer 0) (make-real 2.5))))
+(define p5 (make-from-coeffs 'x (list (make-real 3.5) (make-real 4.5))))
 (display "TEST1 -- 0.0 + 4.5x^3") (newline)
+(define p3 (make-from-termlist 'x (list (make-term (make-integer 0) (make-real 0.0))
+                                        (make-term (make-integer 3) (make-real 4.5)))))
+(define p6 (make-from-coeffs 'x (list (make-real 4.5) (make-integer 0) (make-integer 0) (make-real 0.0))))
 (display p3) (newline)
 (display p6) (newline)
 (display "(p1 = 3x^2 + 2.5), (p2 = 3.5x + 4.5)") (newline)
@@ -865,60 +848,60 @@
 (display (mul p4 p5)) (newline) (newline)
 
 (display "TEST5 -- (0x^0 == 0)") (newline)
-(display (=zero? (make-from-sparse-termlist 'x '()))) (newline)
-(display (=zero? (make-from-dense-termlist 'x '()))) (newline)
+(display (=zero? (make-from-termlist 'x '()))) (newline)
+(display (=zero? (make-from-coeffs 'x '()))) (newline)
 (display "TEST6 -- (0x^3 + (0/4)x^2 + 0x == 0)") (newline)
-(display (=zero? (make-from-sparse-termlist 'x (list (list (make-integer 3) (make-real 0))
-                                                     (list (make-integer 2) (make-rational 0 4))
-                                                     (list (make-integer 1) (make-integer 0)))))) (newline)
-(display (=zero? (make-from-dense-termlist 'x (list (make-real 0) (make-rational 0 4) (make-integer 0))))) (newline)
+(display (=zero? (make-from-termlist 'x (list (make-term (make-integer 3) (make-real 0))
+                                              (make-term (make-integer 2) (make-rational 0 4))
+                                              (make-term (make-integer 1) (make-integer 0)))))) (newline)
+(display (=zero? (make-from-coeffs 'x (list (make-real 0) (make-rational 0 4) (make-integer 0))))) (newline)
 (display "TEST7 -- (0x^3 + (4/4)x^2 + 0x == 0)") (newline)
-(display (=zero? (make-from-sparse-termlist 'x (list (list (make-integer 3) (make-real 0))
-                                                     (list (make-integer 2) (make-rational 4 4))
-                                                     (list (make-integer 1) (make-integer 0)))))) (newline)
-(display (=zero? (make-from-dense-termlist 'x (list (make-real 0) (make-rational 4 4) (make-integer 0))))) (newline) (newline)
+(display (=zero? (make-from-termlist 'x (list (make-term (make-integer 3) (make-real 0))
+                                              (make-term (make-integer 2) (make-rational 4 4))
+                                              (make-term (make-integer 1) (make-integer 0)))))) (newline)
+(display (=zero? (make-from-coeffs 'x (list (make-real 0) (make-rational 4 4) (make-integer 0))))) (newline) (newline)
 
 ;; some nice examples to test copied from
 ;; http://jots-jottings.blogspot.com/2012/05/sicp-exercise-290-supporting-dense-and_9570.html
 (display "TESTING -- polynomial ops from JOTS-JOTTINGS") (newline)
 (define zero (make-integer 0))
 (define dense
-        (make-from-dense-termlist 'x (list (make-integer 4)
-                                           (make-integer 3)
-                                           (make-integer 2)
-                                           (make-integer 1)
-                                           zero)))
+        (make-from-coeffs 'x (list (make-integer 4)
+                                   (make-integer 3)
+                                   (make-integer 2)
+                                   (make-integer 1)
+                                   zero)))
 (define dense-with-many-zeros
-        (make-from-dense-termlist 'x (list (make-integer 42)
-                                           zero
-                                           zero
-                                           zero
-                                           zero
-                                           zero
-                                           (make-integer -1))))
+        (make-from-coeffs 'x (list (make-integer 42)
+                                   zero
+                                   zero
+                                   zero
+                                   zero
+                                   zero
+                                   (make-integer -1))))
 
 (define sparse
-        (make-from-sparse-termlist 'x (list (list (make-integer 5) (make-integer 5))
-                                          (list (make-integer 3) (make-integer 3))
-                                          (list (make-integer 1) (make-integer 1)))))
+        (make-from-termlist 'x (list (make-term (make-integer 5) (make-integer 5))
+                                     (make-term (make-integer 3) (make-integer 3))
+                                     (make-term (make-integer 1) (make-integer 1)))))
 
 (define another-sparse
-        (make-from-sparse-termlist 'x (list (list (make-integer 5) (make-integer 5))
-                                          (list (make-integer 3) (make-integer 3))
-                                          (list (make-integer 1) (make-integer 1))
-                                          (list (make-integer 0) (make-integer 3)))))
+        (make-from-termlist 'x (list (make-term (make-integer 5) (make-integer 5))
+                                     (make-term (make-integer 3) (make-integer 3))
+                                     (make-term (make-integer 1) (make-integer 1))
+                                     (make-term (make-integer 0) (make-integer 3)))))
 
 (define very-sparse
-        (make-from-sparse-termlist 'x (list (list (make-integer 50) (make-integer 150))
-                                          (list (make-integer 10) (make-integer 11))
-                                          (list (make-integer 0) (make-integer 1)))))
+        (make-from-termlist 'x (list (make-term (make-integer 50) (make-integer 150))
+                                     (make-term (make-integer 10) (make-integer 11))
+                                     (make-term (make-integer 0) (make-integer 1)))))
 
 (define polypoly
-        (make-from-dense-termlist
+        (make-from-coeffs
          'x
-         (list (make-from-dense-termlist 'y
-                                            (list (make-integer 2)
-                                                  (make-integer 1))))))
+         (list (make-from-coeffs 'y
+                                 (list (make-integer 2)
+                                       (make-integer 1))))))
 
 (display (add polypoly dense)) (newline)
 (display (add polypoly polypoly)) (newline)
@@ -936,79 +919,79 @@
 ;; http://jots-jottings.blogspot.com/2012/06/sicp-exercise-291-dividing-polynomials.html
 (display "TESTING -- polynomial division examples from JOTS-JOTTINGS") (newline)
 (define sparse-numerator-1
-  (make-from-sparse-termlist 'x
-                              (list (list (make-integer 5) (make-integer 1))
-                                    (list (make-integer 0) (make-integer -1)))))
+  (make-from-termlist 'x
+                      (list (make-term (make-integer 5) (make-integer 1))
+                            (make-term (make-integer 0) (make-integer -1)))))
 
 (define sparse-denominator-1
-  (make-from-sparse-termlist 'x
-                              (list (list (make-integer 2) (make-integer 1))
-                                    (list (make-integer 0) (make-integer -1)))))
+  (make-from-termlist 'x
+                      (list (make-term (make-integer 2) (make-integer 1))
+                            (make-term (make-integer 0) (make-integer -1)))))
 
 (define sparse-numerator-2
-  (make-from-sparse-termlist 'x
-                              (list (list (make-integer 2) (make-integer 2))
-                                    (list (make-integer 0) (make-integer 2)))))
+  (make-from-termlist 'x
+                      (list (make-term (make-integer 2) (make-integer 2))
+                            (make-term (make-integer 0) (make-integer 2)))))
 
 (define sparse-denominator-2
-  (make-from-sparse-termlist 'x
-                              (list (list (make-integer 2) (make-integer 1))
-                                    (list (make-integer 0) (make-integer 1)))))
+  (make-from-termlist 'x
+                      (list (make-term (make-integer 2) (make-integer 1))
+                            (make-term (make-integer 0) (make-integer 1)))))
 
 (define sparse-numerator-3
-  (make-from-sparse-termlist 'x
-                              (list (list (make-integer 4) (make-integer 3))
-                                    (list (make-integer 3) (make-integer 7))
-                                    (list (make-integer 0) (make-integer 6)))))
+  (make-from-termlist 'x
+                      (list (make-term (make-integer 4) (make-integer 3))
+                            (make-term (make-integer 3) (make-integer 7))
+                            (make-term (make-integer 0) (make-integer 6)))))
 
 (define sparse-denominator-3
-  (make-from-sparse-termlist 'x
-                              (list (list (make-integer 4) (make-real 0.5))
-                                    (list (make-integer 3) (make-integer 1))
-                                    (list (make-integer 0) (make-integer 3)))))
+  (make-from-termlist 'x
+                      (list (make-term (make-integer 4) (make-real 0.5))
+                            (make-term (make-integer 3) (make-integer 1))
+                            (make-term (make-integer 0) (make-integer 3)))))
 
 (define dense-numerator-1
-  (make-from-dense-termlist 'x
-                               (list (make-integer 1)
-                                     zero
-                                     zero
-                                     zero
-                                     zero
-                                     (make-integer -1))))
+  (make-from-coeffs 'x
+                    (list (make-integer 1)
+                          zero
+                          zero
+                          zero
+                          zero
+                          (make-integer -1))))
 
 (define dense-denominator-1
-  (make-from-dense-termlist 'x
-                               (list (make-integer 1)
-                                     zero
-                                     (make-integer -1))))
+  (make-from-coeffs 'x
+                    (list (make-integer 1)
+                          zero
+                          (make-integer -1))))
 
 (define dense-numerator-2
-  (make-from-dense-termlist 'x
-                               (list (make-integer 2)
-                                     zero
-                                     (make-integer 2))))
+  (make-from-coeffs 'x
+                    (list (make-integer 2)
+                          zero
+                          (make-integer 2))))
 
 (define dense-denominator-2
-  (make-from-dense-termlist 'x
-                               (list (make-integer 1)
-                                     zero
-                                     (make-integer 1))))
+  (make-from-coeffs 'x
+                    (list (make-integer 1)
+                          zero
+                          (make-integer 1))))
 
 (define dense-numerator-3
-  (make-from-dense-termlist 'x
-                               (list (make-integer 3)
-                                     (make-integer 7)
-                                     zero
-                                     zero
-                                     (make-integer 6))))
+  (make-from-coeffs 'x
+                    (list (make-integer 3)
+                          (make-integer 7)
+                          zero
+                          zero
+                          (make-integer 6))))
 
 (define dense-denominator-3
-  (make-from-dense-termlist 'x
-                               (list (make-real 0.5)
-                                     (make-integer 1)
-                                     zero
-                                     zero
-                                     (make-integer 3))))
+  (make-from-coeffs 'x
+                    (list (make-real 0.5)
+                          (make-integer 1)
+                          zero
+                          zero
+                          (make-integer 3))))
 
 (display (div sparse-numerator-1 sparse-denominator-1)) (newline)
 (display (div dense-numerator-1 dense-denominator-1)) (newline)
