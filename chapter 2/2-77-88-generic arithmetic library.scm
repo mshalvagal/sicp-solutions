@@ -528,7 +528,7 @@
         ((get 'make-from-sparse-termlist 'dense-termlist) L)))
   ;; interface to rest of the system
   (define (tag L) (attach-tag 'sparse-termlist L))
-  (put-coercion 'sparse-list 'dense-list sparse2dense)
+  (put-coercion 'sparse-termlist 'dense-termlist sparse2dense)
   (put 'add '(sparse-termlist sparse-termlist) 
        (lambda (L1 L2) (tag (add-terms L1 L2))))
   (put 'sub '(sparse-termlist sparse-termlist) 
@@ -543,6 +543,8 @@
   (put 'negate-terms '(sparse-termlist) 
        (lambda (L) (tag (negate-terms L))))
   (put '=zero? '(sparse-termlist) (lambda (L) (=zero-all-terms? L)))
+  (put 'equ? '(sparse-termlist sparse-termlist)
+       (lambda (L1 L2) (=zero-all-terms? (sub-terms L1 L1))))
   (put 'constant-term '(sparse-termlist) (lambda (L) (constant-term L)))
   (put 'make-from-sparse-termlist 'sparse-termlist
        (lambda (terms) (tag (build-from-paired-termlist terms (the-empty-termlist)))))
@@ -695,6 +697,8 @@
   (put 'negate-terms '(dense-termlist) 
        (lambda (L) (tag (negate-terms L))))
   (put '=zero? '(dense-termlist) (lambda (L) (=zero-all-terms? L)))
+  (put 'equ? '(dense-termlist dense-termlist)
+       (lambda (L1 L2) (=zero-all-terms? (sub-terms L1 L1))))
   (put 'constant-term '(dense-termlist) (lambda (L) (constant-term L)))
   (put 'make-from-sparse-termlist 'dense-termlist
        (lambda (terms) (tag (build-from-paired-termlist terms (the-empty-termlist)))))
