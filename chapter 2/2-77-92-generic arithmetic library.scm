@@ -183,6 +183,7 @@
 
 ;;Generic arithmetics package
 (define (add x y) (apply-generic 'add x y))
+(define (addd x y z) (apply-generic 'addd x y z))
 (define (sub x y) (apply-generic 'sub x y))
 (define (mul x y) (apply-generic 'mul x y))
 (define (div x y) (apply-generic 'div x y))
@@ -667,19 +668,19 @@
     (if (same-variable? (variable p1) (variable p2))
         (make-poly (select-variable p1 p2)
                    (add-terms (term-list p1)
-                        (term-list p2)))
+                              (term-list p2)))
         (error "Polynomials do not correspond to the same variable -- ADD-POLY" (list p1 p2))))
   (define (sub-poly p1 p2)
     (if (same-variable? (variable p1) (variable p2))
         (make-poly (select-variable p1 p2)
                    (sub-terms (term-list p1)
-                        (term-list p2)))
+                              (term-list p2)))
         (error "Polynomials do not correspond to the same variable -- SUB-POLY" (list p1 p2))))
   (define (mul-poly p1 p2)
     (if (same-variable? (variable p1) (variable p2))
         (make-poly (select-variable p1 p2)
                    (mul-terms (term-list p1)
-                        (term-list p2)))
+                              (term-list p2)))
         (error "Polynomials do not correspond to the same variable -- MUL-POLY" (list p1 p2))))
   (define (div-poly p1 p2)
     (if (same-variable? (variable p1) (variable p2))
@@ -734,16 +735,60 @@
     (cond ((eq? principal-variable (variable p)) p)
           ((eq? 'unbound (variable p)) (make-poly principal-variable (term-list p)))
           (else (make-from-coeffs principal-variable (list (tag p))))))
+  (define (add-simple p1 p2)
+    (coerce-and-call p1 p2 add-poly))
+  (define (residual-poly p)
+    (let ((var (variable p))
+          (terms (term-list p)))
+      (if (empty-termlist? terms)
+          (make-from-coeffs var (list (make-integer 0)))
+          (make-poly var (rest-terms terms)))))
+  (define (make-new-term-list var var-order L)
+    (if (empty-termlist? L)
+        (the-empty-termlist)
+        (adjoin-term (make-term (order (first-term L))
+                                (tag (express-in-principal-order (make-from-termlist var
+                                                                                     (list (make-term var-order
+                                                                                                      (coeff (first-term L))))))))
+                     (make-new-term-list var var-order (rest-terms L)))))
+  (define (exchange-or-combine-variables var var-order inner-poly)
+    (let ((inner-var (variable inner-poly)))
+      (if (same-variable? inner-var var)
+          (mul-poly inner-poly
+                    (make-from-termlist var (list (make-term var-order (make-integer 1)))))
+          (make-poly inner-var
+                     (make-new-term-list var var-order (term-list inner-poly))))))
+
+  (define (express-in-principal-order p)
+    (if (empty-termlist? (term-list p))
+        (make-from-coeffs (variable p) (list (make-integer 0)))
+        (let* ((term1 (first-term (term-list p)))
+               (c1 (coeff term1))
+               (o1 (order term1))
+               (var (variable p)))
+          (if (eq? (type-tag c1) 'polynomial)
+              (let* ((c1-simpl (express-in-principal-order (contents c1)))
+                     (principal-variable (select-principal-variable (variable c1-simpl) var)))
+                (if (eq? principal-variable var)
+                    (add-simple (make-from-termlist var (list (make-term o1 (tag c1-simpl))))
+                                (express-in-principal-order (residual-poly p)))
+                    (add-simple (exchange-or-combine-variables var o1 c1-simpl)
+                                (express-in-principal-order (residual-poly p)))))
+              (add-simple (make-from-termlist var (list (make-term o1 c1)))
+                          (express-in-principal-order (residual-poly p)))))))
+
+  
   (define (coerce-and-call p1 p2 op)
     (let* ((principal (select-principal-variable (variable p1) (variable p2)))
            (new-p1 (express-in principal p1))
            (new-p2 (express-in principal p2)))
       (op new-p1 new-p2)))
+                                    
   ;; interface to rest of the system
   (define (tag p)
     (attach-tag 'polynomial
-                (make-poly (variable p)
-                           (to-best-representation (term-list p)))))
+                (express-in-principal-order (make-poly (variable p)
+                                                       (to-best-representation (term-list p))))))
   (put-coercion 'polynomial 'complex poly2complex)
   (put 'add '(polynomial polynomial) 
        (lambda (p1 p2) (tag (coerce-and-call p1 p2 add-poly))))
@@ -779,6 +824,7 @@
 (install-rational-package)
 (install-complex-package)
 (install-polynomial-package)
+
 
 (newline)
 (display "TESTING -- creating rational number 1/2") (newline)
@@ -816,7 +862,6 @@
 (display (sub z1 z1)) (newline) (newline)
 
 (display "TESTING -- addition with three args (z1 + z1 + z1)") (newline)
-(define (addd x y z) (apply-generic 'addd x y z))
 (display (addd z1 z1 z1)) (newline) (newline)
 
 (display "TESTING -- square root op (sqrt 4) (sqrt -1)") (newline)
@@ -998,4 +1043,40 @@
 (display (div sparse-numerator-2 sparse-denominator-2)) (newline)
 (display (div dense-numerator-2 dense-denominator-2)) (newline)
 (display (div sparse-numerator-3 sparse-denominator-3)) (newline)
-(display (div dense-numerator-3 dense-denominator-3)) (newline)
+(display (div dense-numerator-3 dense-denominator-3)) (newline) (newline)
+
+
+;; a nice example to test copied from
+;; http://jots-jottings.blogspot.com/2012/06/sicp-exercise-292-dealing-with.html
+(display "TESTING -- multiple variable polynomial simplification example from JOTS-JOTTINGS") (newline)
+(define poly-1
+  (make-from-coeffs 'x
+                    (list (make-from-coeffs 'y
+                                            (list (make-integer 5)
+                                                  (make-integer 2)
+                                                  (make-integer -1)))
+                          (make-from-coeffs 'y
+                                            (list (make-integer 2)
+                                                  (make-integer 1)
+                                                  (make-integer 2)))
+                          (make-integer -3))))
+
+
+(define poly-2
+  (make-from-coeffs 'y
+                    (list (make-from-coeffs 'x
+                                            (list (make-integer 5)
+                                                  (make-integer 2)
+                                                  (make-integer 0)))
+                          (make-from-coeffs 'x
+                                            (list (make-integer 2)
+                                                  (make-integer 1)
+                                                  (make-integer 0)))
+                          (make-from-coeffs 'x
+                                            (list (make-integer -1)
+                                                  (make-integer 2)
+                                                  (make-integer -5))))))
+
+(display poly-2) (newline) (newline)
+(display "RESULT") (newline)
+(display (sub poly-1 poly-2)) (newline) (newline)
