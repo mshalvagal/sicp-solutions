@@ -731,10 +731,10 @@
                   (if (string<=? s1 s2)
                       v1
                       v2)))))
-  (define (express-in principal-variable p)
-    (cond ((eq? principal-variable (variable p)) p)
-          ((eq? 'unbound (variable p)) (make-poly principal-variable (term-list p)))
-          (else (make-from-coeffs principal-variable (list (tag p))))))
+  (define (express-in target-variable p)
+    (cond ((eq? target-variable (variable p)) p)
+          ((eq? 'unbound (variable p)) (make-poly target-variable (term-list p)))
+          (else (make-from-coeffs target-variable (list (tag p))))))
   (define (add-simple p1 p2)
     (coerce-and-call p1 p2 add-poly))
   (define (residual-poly p)
@@ -743,23 +743,23 @@
       (if (empty-termlist? terms)
           (make-from-coeffs var (list (make-integer 0)))
           (make-poly var (rest-terms terms)))))
-  (define (make-new-term-list var var-order L)
+  (define (make-new-term-list-of-polys var var-order L)
     (if (empty-termlist? L)
         (the-empty-termlist)
         (adjoin-term (make-term (order (first-term L))
-                                (tag (express-in-principal-order (make-from-termlist var
+                                (tag (express-in-canonical-form (make-from-termlist var
                                                                                      (list (make-term var-order
                                                                                                       (coeff (first-term L))))))))
-                     (make-new-term-list var var-order (rest-terms L)))))
+                     (make-new-term-list-of-polys var var-order (rest-terms L)))))
   (define (exchange-or-combine-variables var var-order inner-poly)
     (let ((inner-var (variable inner-poly)))
       (if (same-variable? inner-var var)
           (mul-poly inner-poly
                     (make-from-termlist var (list (make-term var-order (make-integer 1)))))
           (make-poly inner-var
-                     (make-new-term-list var var-order (term-list inner-poly))))))
+                     (make-new-term-list-of-polys var var-order (term-list inner-poly))))))
 
-  (define (express-in-principal-order p)
+  (define (express-in-canonical-form p)
     (if (empty-termlist? (term-list p))
         (make-from-coeffs (variable p) (list (make-integer 0)))
         (let* ((term1 (first-term (term-list p)))
@@ -767,15 +767,15 @@
                (o1 (order term1))
                (var (variable p)))
           (if (eq? (type-tag c1) 'polynomial)
-              (let* ((c1-simpl (express-in-principal-order (contents c1)))
+              (let* ((c1-simpl (express-in-canonical-form (contents c1)))
                      (principal-variable (select-principal-variable (variable c1-simpl) var)))
                 (if (eq? principal-variable var)
                     (add-simple (make-from-termlist var (list (make-term o1 (tag c1-simpl))))
-                                (express-in-principal-order (residual-poly p)))
+                                (express-in-canonical-form (residual-poly p)))
                     (add-simple (exchange-or-combine-variables var o1 c1-simpl)
-                                (express-in-principal-order (residual-poly p)))))
+                                (express-in-canonical-form (residual-poly p)))))
               (add-simple (make-from-termlist var (list (make-term o1 c1)))
-                          (express-in-principal-order (residual-poly p)))))))
+                          (express-in-canonical-form (residual-poly p)))))))
 
   
   (define (coerce-and-call p1 p2 op)
@@ -787,7 +787,7 @@
   ;; interface to rest of the system
   (define (tag p)
     (attach-tag 'polynomial
-                (express-in-principal-order (make-poly (variable p)
+                (express-in-canonical-form (make-poly (variable p)
                                                        (to-best-representation (term-list p))))))
   (put-coercion 'polynomial 'complex poly2complex)
   (put 'add '(polynomial polynomial) 
