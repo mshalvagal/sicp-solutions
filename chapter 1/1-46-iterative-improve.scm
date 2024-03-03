@@ -1,3 +1,4 @@
+#lang sicp
 (define (square x) (* x x))
 
 (define (average x y)
@@ -20,4 +21,10 @@
   (define (close-enough? v1 v2) (< (abs (- v1 v2)) tolerance))
   ((iterative-improve close-enough? next-guess) first-guess))
 
-(display (fixed-point (lambda (x) (* 0.5 (+ x (/ (log 1000) (log x))))) 2))
+(define (sqrt x)
+  (fixed-point (lambda(y) (average y (/ x y))) 1))
+
+(fixed-point (lambda (x) (* 0.5 (+ x (/ (log 1000) (log x))))) 2)
+(newline)
+
+(sqrt 2)

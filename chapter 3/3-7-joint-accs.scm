@@ -25,7 +25,7 @@
                          (newline))
                        (begin
                          (display "Incorrect password. Remaining attempts: ")
-                         (display (- 3 incorrect-attempts))
+                         (display (- 2 incorrect-attempts))
                          (newline)))))))
     dispatch))
 
@@ -43,7 +43,7 @@
                          (newline))
                        (begin
                          (display "Incorrect password. Remaining attempts: ")
-                         (display (- 3 incorrect-attempts))
+                         (display (- 2 incorrect-attempts))
                          (newline)))))))
     dispatch))
 
