@@ -1,0 +1,1 @@
+("8.9" tarm64osx ("ebc33e58e490963c8addd0de4c7a8e9ee68516f5" . "4a94bf64f1aa66cbeb125de53b161a1d03fefcb2") (collects #"drracket" #"private" #"drracket-errortrace-key.rkt") (collects #"sicp" #"lang" #"reader.rkt") (collects #"sicp" #"main.rkt"))
