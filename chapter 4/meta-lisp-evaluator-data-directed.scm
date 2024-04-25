@@ -187,7 +187,7 @@
       (caddr exp)
       (make-lambda 
        (cdadr exp)   ; formal parameters
-       (cddr exp)))) ; body
+       (sequence->exp (cddr exp))))) ; body
 
 (define (lambda? exp) 
   (tagged-list? exp 'lambda))

@@ -71,6 +71,6 @@
   (call fact 100000))
                    the-global-environment))
 (define end (runtime))
-(display "Time to compute fact(100000): ")
+(display "Time to compute: ")
 (/ (- end start) 1000000.0)
 

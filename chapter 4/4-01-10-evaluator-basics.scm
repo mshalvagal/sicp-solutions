@@ -234,7 +234,7 @@
                              (sequence->exp (cond-actions first))
                              (expand-clauses rest)))))))
 
-(display "Converting to if expressions and evaluated with (define i 42)")(newline)
+(display "Converting to if expressions and evaluating with (define i 42)")(newline)
 (newline)
 (display "Normal conditional")(newline)
 (display "(cond ((call > i 0) i)
@@ -416,3 +416,6 @@
 (define (for-incrementor exp) (cadddr exp))
 (define (for-actions exp) (cddddr exp))
 ;------------------TODO: for loop----------------------------------
+
+
+;(driver-loop)
