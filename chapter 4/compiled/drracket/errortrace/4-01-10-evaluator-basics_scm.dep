@@ -1,1 +1,0 @@
-("8.9" tarm64osx ("51b976628bbd54c5c058b7c8013160eb75949830" . "7bcdd038beabbe163ca5ef4adc9ff0ed26babf83") #"/Users/srinmanu/Projects/code/sicp-solutions/chapter 4/meta-lisp-evaluator-data-directed.scm" (collects #"drracket" #"private" #"drracket-errortrace-key.rkt") (collects #"sicp" #"lang" #"reader.rkt") (collects #"sicp" #"main.rkt"))
