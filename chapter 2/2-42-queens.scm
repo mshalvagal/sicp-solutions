@@ -1,3 +1,5 @@
+#lang sicp
+
 (define (accumulate op initial sequence)
   (if (null? sequence)
       initial
