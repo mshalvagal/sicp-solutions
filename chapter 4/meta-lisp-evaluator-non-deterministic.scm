@@ -1,5 +1,5 @@
 #lang sicp
-
+(#%provide ambtest-2)
 (#%provide ambeval)
 (#%provide analyze)
 (#%provide execute-application)
@@ -71,6 +71,24 @@
 (#%provide make-table)
 (#%provide get)
 (#%provide put)
+
+(define (ambtest-2 expr all-vals max_reps)
+  (let ((n 1))
+    (ambeval expr
+             the-global-environment
+             (lambda (val next-alternative)
+               (newline)
+               (display ";;; Amb-Eval output\n")
+               (display val)
+               (newline)
+               (if all-vals
+                   (if (>= n max_reps)
+                       (display "*** Reached max number of correct answers ***")
+                       (begin
+                         (set! n (+ n 1))
+                         (next-alternative)))))
+               (lambda ()
+                 (display "*** No more values ***")))))
 
 ;;Table operations
 (define (make-table)
@@ -175,7 +193,8 @@
     (lambda (env succeed fail)
       (proc1 env
              (lambda (val1 fail2)
-               (proc2 env succeed fail2)))))
+               (proc2 env succeed fail2))
+             fail)))
   (define (loop first-proc rest-procs)
     (if (null? rest-procs)
         first-proc
@@ -266,6 +285,8 @@
   (put 'analyze 'if analyze-if)
   (put 'analyze 'lambda analyze-lambda)
   (put 'analyze 'if analyze-if)
+  (put 'analyze 'let
+       (lambda (exp) (analyze (let->combination exp))))
   (put 'analyze 'begin
        (lambda (exp) (analyze-sequence (begin-actions exp))))
   (put 'analyze 'call analyze-application)
@@ -376,6 +397,18 @@
                      (sequence->exp (cond-actions first))
                      (expand-clauses rest))))))
 
+(define (let-specs exp) (cadr exp))
+(define (let-body exp) (cddr exp))
+
+(define (let-spec-var spec-exp) (car spec-exp))
+(define (let-spec-exp spec-exp) (cadr spec-exp))
+
+(define (let->combination exp)
+  (make-application
+   (make-lambda (map let-spec-var (let-specs exp))
+                (sequence->exp (let-body exp)))
+   (map let-spec-exp (let-specs exp))))
+
 (define (true? x)
   (not (eq? x false)))
 (define (false? x)
@@ -451,6 +484,19 @@
   (tagged-list? proc 'primitive))
 (define (primitive-implementation proc) (cadr proc))
 
+(define (square x) (* x x))
+(define (smallest-divisor n)
+  (find-divisor n 2))
+(define (find-divisor n test-divisor)
+  (cond ((> (square test-divisor) n) n)
+        ((divides? test-divisor n) test-divisor)
+        (else (find-divisor n (+ test-divisor 1)))))
+(define (divides? a b)
+  (= (remainder b a) 0))
+
+(define (prime? n)
+  (= n (smallest-divisor n)))
+
 (define primitive-procedures
   (list (list 'car car)
         (list 'cdr cdr)
@@ -458,7 +504,10 @@
         (list 'cddr cddr)
         (list 'caar caar)
         (list 'cons cons)
+        (list 'eq? eq?)
         (list 'null? null?)
+        (list 'list list)
+        (list 'not not)
         (list '+ +)
         (list '* *)
         (list '/ /)
@@ -468,6 +517,10 @@
         (list '> >)
         (list '<= <=)
         (list '>= >=)
+        (list 'even? even?)
+        (list 'odd? odd?)
+        (list 'prime? prime?)
+        (list 'display display)
         ))
 (define (primitive-procedure-names)
   (map car
@@ -531,12 +584,31 @@
                      '<procedure-env>))
       (display object)))
 
-
-(ambeval '(amb 1 2 3)
+(ambeval '(define require
+            (lambda (p)
+              (if (call not p) (amb))))
          the-global-environment
-         (lambda (val fail)
-           (display val))
-         (lambda ()
-           (display "Failed")))
-(driver-loop)
-;(ambeval '(call * 2 2) the-global-environment)
+         (lambda (value fail) 'succeeded)
+         (lambda () 'failed))
+
+(ambeval '(define an-element-of
+            (lambda (items)
+              (call require (call not (call null? items)))
+              (amb (call car items) (call an-element-of (call cdr items)))))
+         the-global-environment
+         (lambda (value fail) 'succeeded)
+         (lambda () 'failed))
+
+(ambeval '(define prime-sum-pair
+            (lambda (list1 list2)
+              (let ((a (call an-element-of list1))
+                    (b (call an-element-of list2)))
+                (call require (call prime? (call + a b)))
+                (call list a b))))
+         the-global-environment
+         (lambda (value fail) 'succeeded)
+         (lambda () 'failed))
+
+;(driver-loop)
+
+;(ambeval '(amb 1 2 3) the-global-environment (lambda (val fail) (display val)) (lambda () (display "Failed")))
