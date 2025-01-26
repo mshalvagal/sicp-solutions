@@ -250,7 +250,7 @@
       (caddr exp)
       (make-lambda 
        (cdadr exp)   ; formal parameters
-       (cddr exp)))) ; body
+       (make-begin (cddr exp))))) ; body
 
 (define (lambda-parameters exp) (cadr exp))
 (define (lambda-body exp) (cddr exp))
@@ -450,5 +450,6 @@
                      '<procedure-env>))
       (display object)))
 
+(driver-loop)
 
 ;(metacircular-eval '(call * 2 2) the-global-environment)

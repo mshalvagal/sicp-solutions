@@ -1,5 +1,5 @@
 #lang sicp
-(#%provide ambtest-2)
+(#%provide ambtest)
 (#%provide ambeval)
 (#%provide analyze)
 (#%provide execute-application)
@@ -72,7 +72,7 @@
 (#%provide get)
 (#%provide put)
 
-(define (ambtest-2 expr all-vals max_reps)
+(define (ambtest expr all-vals max_reps)
   (let ((n 1))
     (ambeval expr
              the-global-environment
@@ -332,7 +332,7 @@
       (caddr exp)
       (make-lambda 
        (cdadr exp)   ; formal parameters
-       (cddr exp)))) ; body
+       (make-begin (cddr exp))))) ; body
 
 (define (lambda-parameters exp) (cadr exp))
 (define (lambda-body exp) (cddr exp))
@@ -504,9 +504,9 @@
         (list 'cddr cddr)
         (list 'caar caar)
         (list 'cons cons)
-        (list 'eq? eq?)
-        (list 'null? null?)
         (list 'list list)
+        (list 'memq memq)
+        (list 'eq? eq?)
         (list 'not not)
         (list '+ +)
         (list '* *)
@@ -517,10 +517,13 @@
         (list '> >)
         (list '<= <=)
         (list '>= >=)
-        (list 'even? even?)
+        (list 'abs abs)
         (list 'odd? odd?)
+        (list 'even? even?)
+        (list 'null? null?)
         (list 'prime? prime?)
         (list 'display display)
+        (list 'member member)
         ))
 (define (primitive-procedure-names)
   (map car
@@ -584,6 +587,42 @@
                      '<procedure-env>))
       (display object)))
 
+
+; Add analyze handlers for or/and
+(define (analyze-or exp)
+  (let ((procs (map analyze (cdr exp))))
+    (lambda (env succeed fail)
+      (define (try-next procs)
+        (if (null? procs)
+            (succeed false fail)
+            ((car procs) env
+                        (lambda (val fail2)
+                          (if (true? val)
+                              (succeed val fail2)
+                              (try-next (cdr procs))))
+                        fail)))
+      (try-next procs))))
+
+(define (analyze-and exp)
+  (let ((procs (map analyze (cdr exp))))
+    (lambda (env succeed fail)
+      (define (try-next procs last-val)
+        (if (null? procs)
+            (succeed last-val fail)
+            ((car procs) env
+                        (lambda (val fail2)
+                          (if (false? val)
+                              (succeed false fail2)
+                              (try-next (cdr procs) val)))
+                        fail)))
+      (try-next procs true))))
+
+; Add to install-syntax
+(put 'analyze 'or analyze-or)
+(put 'analyze 'and analyze-and)
+
+
+; Some function definitions that are useful to include in the global environment
 (ambeval '(define require
             (lambda (p)
               (if (call not p) (amb))))
