@@ -270,3 +270,104 @@
    (lives-near-fixed ?person-1 ?person-2)
    
    ))
+
+
+(display "Logic as programs")
+(newline)(newline)
+(query-driver-loop-for-script
+ '(
+   (assert! (rule (append-to-form () ?y ?y)))
+   (assert! (rule (append-to-form (?u . ?v) ?y (?u . ?z))
+                  (append-to-form ?v ?y ?z)))
+
+   (append-to-form (a b) (c d) ?z)
+
+   (append-to-form (a b) ?y (a b c d))
+
+   (append-to-form ?x ?y (a b c d))
+   
+   ))
+
+
+(display "Exercise 4.61")
+(newline)(newline)
+(query-driver-loop-for-script
+ '(
+   (assert! (rule (?x next-to ?y in (?x ?y . ?u))))
+   (assert! (rule (?x next-to ?y in (?v . ?z))
+                  (?x next-to ?y in ?z)))
+
+   (?x next-to ?y in (1 (2 3) 4))
+   
+   (?x next-to 1 in (2 1 3 1))
+   
+   ))
+
+
+(display "Exercise 4.62")
+(newline)(newline)
+(query-driver-loop-for-script
+ '(
+   (assert! (rule (last-pair (?x) (?x))))
+   (assert! (rule (last-pair (?v . ?z) ?x)
+                  (last-pair ?z ?x)))
+
+   (last-pair (3) ?x)
+
+   (last-pair (1 2 3) ?x)
+
+   (last-pair (2 ?x) (3))
+
+   ; goes into an infinite loop
+   ;(last-pair ?x (3))
+   
+   ))
+
+
+(display "Exercise 4.63")
+(newline)(newline)
+(query-driver-loop-for-script
+ '(
+   (assert! (son Adam Cain))
+   (assert! (son Cain Enoch))
+   (assert! (son Enoch Irad))
+   (assert! (son Irad Mehujael))
+   (assert! (son Mehujael Methushael))
+   (assert! (son Methushael Lamech))
+   (assert! (wife Lamech Ada))
+   (assert! (son Ada Jabal))
+   (assert! (son Ada Jubal))
+
+   (assert! (rule (grandson ?g ?s)
+                  (and (son ?g ?f)
+                       (son ?f ?s))))
+
+   (assert! (rule (son ?f ?s)
+                  (and (wife ?f ?m)
+                       (son ?m ?s))))
+
+   (grandson Cain ?x)
+
+   (son Lamech ?x)
+
+   (grandson Methushael ?x)
+   
+   ))
+
+
+(display "Exercise 4.64")
+(newline)(newline)
+(display "Infinite loop because ?middle-manager is unbound in one branch of the computation")
+(newline)(newline)(newline)
+
+
+(display "Exercise 4.65")
+(newline)(newline)
+(display "Each result has a different ?middle-manager.")
+(newline)(newline)
+(query-driver-loop-for-script
+ '(
+   
+   (wheel ?who)
+   
+   ))
