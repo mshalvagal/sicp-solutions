@@ -1,6 +1,14 @@
 #lang sicp
 (#%require "logic-interpreter.scm")
 
+(display "TESTING EXAMPLE DATABASE")
+(newline)
+(newline)
+
+(display "Section 4.4.1")
+(newline)
+(newline)
+
 (query-driver-loop-for-script
   '((assert! (address (Bitdiddle Ben) (Slumerville (Ridge Road) 10)))
     (assert! (job (Bitdiddle Ben) (computer wizard)))
@@ -41,11 +49,79 @@
     (assert! (address (Aull DeWitt) (Slumerville (Onion Square) 5)))
     (assert! (job (Aull DeWitt) (administration secretary)))
     (assert! (salary (Aull DeWitt) 25000))
-    (assert! (supervisor (Aull DeWitt) (Warbucks Oliver)))))
+    (assert! (supervisor (Aull DeWitt) (Warbucks Oliver)))
+    
+    (assert! (can-do-job (computer wizard) (computer programmer)))
+    (assert! (can-do-job (computer wizard) (computer technician)))
+    (assert! (can-do-job (administration secretary) (administration big wheel)))
+    ))
 
+(query-driver-loop-for-script
+ '((assert! (rule (lives-near ?person-1 ?person-2)
+                  (and (address ?person-1 (?town . ?rest-1))
+                       (address ?person-2 (?town . ?rest-2))
+                       (not (same ?person-1 ?person-2)))))
+   (assert! (rule (same ?x ?x)))
+   (assert! (rule (wheel ?person)
+                  (and (supervisor ?middle-manager ?person)
+                       (supervisor ?x ?middle-manager))))
+   (assert! (rule (outranked-by ?staff-person ?boss)
+                  (or (supervisor ?staff-person ?boss)
+                      (and (supervisor ?staff-person ?middle-manager)
+                           (outranked-by ?middle-manager ?boss)))))
+   ))
 
+(display "Simple queries")
+(newline)(newline)
 (query-driver-loop-for-script '(
 
+    (job ?x (computer programmer))
+
+    (address ?x ?y)
+
+    (supervisor ?x ?x)
+
+    (job ?x (computer ?type))
+
+    (job ?x (computer . ?type))
+
+    ))
+
+(display "Compound queries")
+(newline)(newline)
+(query-driver-loop-for-script '(
+                   
+    (and (job ?person (computer programmer))
+         (address ?person ?where))
+
+    (or (supervisor ?x (Bitdiddle Ben))
+        (supervisor ?x (Hacker Alyssa P)))
+    
+    (and (supervisor ?x (Bitdiddle Ben))
+         (not (job ?x (computer programmer))))
+
+    (and (salary ?person ?amount)
+         (lisp-value > ?amount 30000))
+    
+    ))
+
+(display "Rules")
+(newline)(newline)
+(query-driver-loop-for-script '(
+                   
+    (lives-near ?x (Bitdiddle Ben))
+
+    (and (job ?x (computer programmer))
+         (lives-near ?x (Bitdiddle Ben)))
+    
+    ))
+
+(display "Exercise 4.55")
+(newline)
+(newline)
+
+(query-driver-loop-for-script '(
+                   
     ; a
     (supervisor ?person (Bitdiddle Ben))
 
@@ -56,3 +132,141 @@
     (address ?name (Slumerville . ?detail))
 
     ))
+
+
+(display "Exercise 4.56")
+(newline)
+(newline)
+(query-driver-loop-for-script '(
+
+    ;a
+    (and (supervisor ?person (Bitdiddle Ben))
+         (address ?person ?where))
+
+    ;b
+    (and (salary ?person ?salary)
+         (salary (Bitdiddle Ben) ?ben-salary)
+         (lisp-value < ?salary ?ben-salary))
+
+    ;c
+    (and (supervisor ?name ?supervisor)
+         (job ?supervisor ?supervisor-job)
+         (not (job ?supervisor (computer . ?job-type)))
+         )
+    
+    ))
+
+
+(display "Exercise 4.57")
+(newline)
+(newline)
+(query-driver-loop-for-script
+ '((assert! (rule (can-replace ?person-1 ?person-2)
+                  (and (or (and (job ?person-1 ?same-job)
+                                (job ?person-2 ?same-job))
+                           (and (can-do-job ?job-1 ?job-2)
+                                (job ?person-1 ?job-1)
+                                (job ?person-2 ?job-2)))
+                       (not (same ?person-1 ?person-2)))))
+
+   (can-replace ?who (Fect Cy D))
+
+   (and (can-replace ?x ?y)
+        (salary ?x ?sal-x)
+        (salary ?y ?sal-y)
+        (lisp-value < ?sal-x ?sal-y))
+   
+   ))
+
+(display "Exercise 4.57")
+(newline)
+(newline)
+(query-driver-loop-for-script
+ '((assert! (rule (can-replace ?person-1 ?person-2)
+                  (and (or (and (job ?person-1 ?same-job)
+                                (job ?person-2 ?same-job))
+                           (and (can-do-job ?job-1 ?job-2)
+                                (job ?person-1 ?job-1)
+                                (job ?person-2 ?job-2)))
+                       (not (same ?person-1 ?person-2)))))
+
+   (can-replace ?who (Fect Cy D))
+
+   (and (can-replace ?x ?y)
+        (salary ?x ?sal-x)
+        (salary ?y ?sal-y)
+        (lisp-value < ?sal-x ?sal-y))
+   
+   ))
+
+(display "Exercise 4.58")
+(newline)
+(newline)
+(query-driver-loop-for-script
+ '((assert! (rule (bigshot ?person)
+                  (and (job ?person (?division . ?job-descr))
+                       (or (not (supervisor ?person ?no-sup))
+                           (and (supervisor ?person ?sup)
+                                (not (job ?sup (?division . ?job-descr-sup))))))))
+
+   (bigshot ?x)
+   
+   ))
+
+(display "Exercise 4.59")
+(newline)
+(newline)
+(query-driver-loop-for-script
+ '((assert! (meeting accounting (Monday 9am)))
+   (assert! (meeting administration (Monday 10am)))
+   (assert! (meeting computer (Wednesday 3pm)))
+   (assert! (meeting administration (Friday 1pm)))
+   (assert! (meeting whole-company (Wednesday 4pm)))
+
+   ;a
+   (meeting ?department (Friday ?time))
+
+   ;b
+   (assert! (rule (meeting-time ?person ?day-and-time)
+                  (or (meeting whole-company ?day-and-time)
+                      (and (meeting ?department ?day-and-time)
+                           (job ?person (?department . ?job-descr))))))
+   (meeting-time (Bitdiddle Ben) ?when)
+
+   ;c
+   (meeting-time (Hacker Alyssa P) (Wednesday ?time))
+   (meeting-time (Hacker Alyssa P) (Friday ?time))
+   
+   ))
+
+(display "Exercise 4.60")
+(newline)
+(newline)
+
+(define (name<? person-1 person-2)
+  (string<? (symbol->string person-1)
+            (symbol->string person-2)))
+
+(query-driver-loop-for-script
+ '(
+   
+   (lives-near (Hacker Alyssa P) ?who)
+   
+   (lives-near ?person-1 ?person-2)
+
+   (assert! (rule (lives-near-fixed ?person-1 ?person-2)
+                  (and (address ?person-1 (?town . ?rest-1))
+                       (address ?person-2 (?town . ?rest-2))
+                       (lisp-value (lambda (name-1 name-2)
+                                     (string<? (apply string-append 
+                                                      (map (lambda (s) (string-append s " ")) 
+                                                           (map symbol->string name-1)))
+                                               (apply string-append 
+                                                      (map (lambda (s) (string-append s " ")) 
+                                                           (map symbol->string name-2)))))
+                                   ?person-1 ?person-2))))
+
+   
+   (lives-near-fixed ?person-1 ?person-2)
+   
+   ))
