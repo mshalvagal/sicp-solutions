@@ -1,5 +1,6 @@
 #lang sicp
 (#%require "logic-interpreter.scm")
+(#%require "logic-interpreter-no-loop-detect.scm")
 
 (display "TESTING EXAMPLE DATABASE")
 (newline)
@@ -358,9 +359,22 @@
 (display "Exercise 4.64")
 (newline)(newline)
 (display "Infinite loop because ?middle-manager is unbound in one branch of the computation")
-(newline)(newline)(newline)
+(newline)(newline)
+
+(query-driver-loop-for-script-loop-detect
+ '(
+   
+   (assert! (rule (outranked-by-v2 ?staff-person ?boss)
+                  (or (supervisor ?staff-person ?boss)
+                      (and (outranked-by-v2 ?middle-manager ?boss)
+                           (supervisor ?staff-person ?middle-manager)))))
+   
+   (outranked-by-v2 (Bitdiddle Ben) ?who)
+
+   ))
 
 
+ 
 (display "Exercise 4.65")
 (newline)(newline)
 (display "Each result has a different ?middle-manager.")
@@ -371,3 +385,75 @@
    (wheel ?who)
    
    ))
+
+
+(display "Exercise 4.67")
+(newline)(newline)
+(display "The following query would've failed without loop detection.")
+(newline)(newline)
+(query-driver-loop-for-script-loop-detect
+ '(
+   
+   (assert! (married Minnie Mickey))
+
+   (assert! (rule (married ?x ?y)
+                  (married ?y ?x)))
+
+   (married Mickey ?who)
+   
+   ))
+
+
+(display "Exercise 4.68")
+(newline)(newline)
+(query-driver-loop-for-script-loop-detect
+ '(
+ 
+   (assert! (rule (append-to-form () ?y ?y)))
+   (assert! (rule (append-to-form (?u . ?v) ?y (?u . ?z))
+                  (append-to-form ?v ?y ?z)))
+   
+   (assert! (rule (reverse () ())))
+   
+   (assert! (rule (reverse (?x1 . ?xrest) ?y)
+                  (and (reverse ?xrest ?y-except-last)
+                       (append-to-form ?y-except-last (?x1) ?y))))
+
+   (reverse (1 2 3) ?x)
+   
+   (reverse ?x (1 2 3))
+   
+   ))
+
+#|
+(display "Trying again with reverse rule added. Goes into infinite loop for both queries.")
+(newline)(newline)
+(query-driver-loop-for-script
+ '(
+   
+   (assert! (rule (reverse ?x ?y)
+                  (reverse ?y ?x)))
+
+   (reverse (1 2 3) ?x)
+   
+   (reverse ?x (1 2 3))
+   ))
+|#
+
+(display "Exercise 4.69")
+(newline)(newline)
+(query-driver-loop-for-script
+ '(
+
+   (assert! (rule ((grandson) ?g ?s) (grandson ?g ?s)))
+   (assert! (rule ((great . ?rel) ?gg ?s)
+                  (and (son ?f ?s)
+                       (?rel ?gg ?f)
+                       (?last-pair ?rel (grandson)))))
+
+   ((great grandson) ?g ?ggs)
+
+   (?relationship Adam Irad)
+   
+   ))
+
