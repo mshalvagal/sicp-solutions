@@ -449,7 +449,7 @@
    (assert! (rule ((great . ?rel) ?gg ?s)
                   (and (son ?f ?s)
                        (?rel ?gg ?f)
-                       (?last-pair ?rel (grandson)))))
+                       (last-pair ?rel (grandson)))))
 
    ((great grandson) ?g ?ggs)
 
