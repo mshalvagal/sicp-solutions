@@ -184,7 +184,7 @@
 (put 'or 'qeval disjoin)
 
 (define (negate operands frame-stream)
-  (stream-flatmap
+  (simple-stream-flatmap
    (lambda (frame)
      (if (stream-null? (qeval (negated-query operands)
                               (singleton-stream frame)))
@@ -193,8 +193,21 @@
    frame-stream))
 (put 'not 'qeval negate)
 
+; SOLUTION TO EXERCISE 4.75
+(define (empty-assertion? exps) (null? exps))
+(define (unique-query exps) (car exps))
+(define (uniquely-asserted contents frame-stream)
+  (simple-stream-flatmap (lambda (frame)
+                           (let ((result (qeval (unique-query contents)
+                                                (singleton-stream frame))))
+                             (if (or (stream-null? result) (stream-null? (stream-cdr result)))
+                                 result
+                                 the-empty-stream)))
+                         frame-stream))
+(put 'unique 'qeval uniquely-asserted)
+
 (define (lisp-value call frame-stream)
-  (stream-flatmap
+  (simple-stream-flatmap
    (lambda (frame)
      (if (execute
           (instantiate
@@ -219,9 +232,9 @@
 ;; 4.4.4.3  Finding Assertions by Pattern Matching
 
 (define (find-assertions pattern frame)
-  (stream-flatmap (lambda (datum)
-                    (check-an-assertion datum pattern frame))
-                  (fetch-assertions pattern frame)))
+  (simple-stream-flatmap (lambda (datum)
+                           (check-an-assertion datum pattern frame))
+                         (fetch-assertions pattern frame)))
 
 (define (check-an-assertion assertion query-pat query-frame)
   (let ((match-result
@@ -434,6 +447,15 @@
        (stream-car stream)
        (delay (flatten-stream (stream-cdr stream))))))
 
+; SOLUTION TO EXERCISE 4.74
+(define (simple-stream-flatmap proc s)
+  (simple-flatten (stream-map proc s)))
+(define (simple-flatten stream)
+  (stream-map stream-car
+              (stream-filter (lambda (s)
+                               (not (stream-null? s)))
+                             stream)))
+
 (define (singleton-stream x)
   (cons-stream x the-empty-stream))
 
@@ -556,3 +578,5 @@
                 (newline)
                 (newline)
                 (go (cdr exps))))))))
+
+;(query-driver-loop)

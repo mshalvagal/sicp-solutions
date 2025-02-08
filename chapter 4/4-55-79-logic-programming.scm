@@ -179,26 +179,6 @@
    
    ))
 
-(display "Exercise 4.57")
-(newline)
-(newline)
-(query-driver-loop-for-script
- '((assert! (rule (can-replace ?person-1 ?person-2)
-                  (and (or (and (job ?person-1 ?same-job)
-                                (job ?person-2 ?same-job))
-                           (and (can-do-job ?job-1 ?job-2)
-                                (job ?person-1 ?job-1)
-                                (job ?person-2 ?job-2)))
-                       (not (same ?person-1 ?person-2)))))
-
-   (can-replace ?who (Fect Cy D))
-
-   (and (can-replace ?x ?y)
-        (salary ?x ?sal-x)
-        (salary ?y ?sal-y)
-        (lisp-value < ?sal-x ?sal-y))
-   
-   ))
 
 (display "Exercise 4.58")
 (newline)
@@ -455,5 +435,45 @@
 
    (?relationship Adam Irad)
    
+   ))
+
+
+
+(display "Exercise 4.71, 4.72, 4.73\n\n")
+(display "These all have to do with how we handle infinite streams. Explicit delays and interleaving the streams all serve to ensure that initial and intermediate solutions are computed and displayed before continuing down the chain of infinite possibilities. You can find some nice examples at this link - https://www.inchmeal.io/sicp/ch-4/ex-4.71.html \n")
+(query-driver-loop-for-script-loop-detect
+ '(
+   (assert! (ones ()))
+   (assert! (rule (ones (1 . ?x)) (ones ?x)))
+
+   (assert! (twos ()))
+   (assert! (rule (twos (2 . ?x)) (twos ?x)))
+
+   ))
+
+(query-driver-loop-for-script-loop-detect '((ones ?x)))
+
+(query-driver-loop-for-script-loop-detect '((or (ones ?x) (twos ?y))))
+
+(query-driver-loop-for-script-loop-detect '((and (ones ?x) (twos ?y))))
+
+
+(display "Exercise 4.74\n\n")
+(display "Behaviour is unchanged with this modification. The implementation simply applies stream-car to the input stream after filtering out the null streams.\n\n\n")
+
+
+(display "Exercise 4.75\n\n")
+(query-driver-loop-for-script
+ '(
+   
+   (unique (job ?x (computer wizard)))
+   
+   (unique (job ?x (computer programmer)))
+
+   (and (job ?x ?j) (unique (job ?anyone ?j)))
+
+   (and (job ?supervisor ?supervisor-job)
+        (unique (supervisor ?x ?supervisor)))
+
    ))
 
