@@ -305,3 +305,83 @@
 
 ;TODO: 5.11b and 5.11c
 
+
+(newline)(newline)
+
+
+(define (compact-print-list lst)
+  ; Helper to check if an item is a simple atom-only list
+  (define (simple-list? item)
+    (and (pair? item)
+         (all-atoms? item)))
+  
+  ; Check if all items in a list are atoms (not pairs)
+  (define (all-atoms? items)
+    (cond
+      ((null? items) true)
+      ((pair? (car items)) false)
+      (else (all-atoms? (cdr items)))))
+  
+  ; Create a string of spaces for indentation
+  (define (make-spaces n)
+    (if (<= n 0)
+        ""
+        (string-append " " (make-spaces (- n 1)))))
+  
+  ; Main recursive printing function
+  (define (print-rec lst indent)
+    (cond
+      ((null? lst) (display "()"))
+      ((not (pair? lst)) (display lst))
+      ((simple-list? lst)
+       ; Print lists with only atoms on a single line
+       (display "(")
+       (let loop ((items lst))
+         (cond
+           ((null? items) (display ")"))
+           (else
+            (display (car items))
+            (if (not (null? (cdr items)))
+                (display " ")
+                '())
+            (loop (cdr items))))))
+      (else
+       ; Complex list with nested structures
+       (display "(")
+       ; Handle the first element
+       (print-rec (car lst) (+ indent 2))
+       
+       ; Handle the rest
+       (let loop ((rest (cdr lst)))
+         (cond
+           ((null? rest) (display ")"))
+           (else
+            (if (or (not (pair? (car rest)))
+                    (simple-list? (car rest)))
+                (display " ") ; Simple item or simple list, stay on same line
+                (begin      ; Complex nested item, new line with indent
+                  (newline)
+                  (display (make-spaces indent))))
+            (print-rec (car rest) (+ indent 2))
+            (loop (cdr rest))))))))
+  
+  ; Start the printing process
+  (print-rec lst 0)
+  (newline))
+
+
+;Exercise 5.12
+(display "Exercise 5.12\n")
+(display "Fibonacci machine analyzer\n")
+(newline)
+(display "Sorted instructions:\n")
+(fibonacci-machine 'get-instructions)
+(newline)
+(display "Entry points:\n")
+(fibonacci-machine 'get-entry-points)
+(newline)
+(display "Stack registers:\n")
+(fibonacci-machine 'get-stack-registers)
+(newline)
+(display "Register source lists:\n")
+(compact-print-list (fibonacci-machine 'get-register-sources))

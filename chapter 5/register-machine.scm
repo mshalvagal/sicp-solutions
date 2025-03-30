@@ -56,26 +56,39 @@
 (define (pop stack) (stack 'pop))
 (define (push stack value) ((stack 'push) value))
 
+(define (add-unique element lst)
+  (if (member element lst)
+      lst                      ; Return the original list if element is already present
+      (cons element lst)))     ; Otherwise add the element to the front of the list
+
 ; implementation of the model of the machine
 
 (define (make-new-machine)
   (let ((pc (make-register 'pc))
         (flag (make-register 'flag))
         (stack (make-stack))
-        (the-instruction-sequence '()))
+        (the-instruction-sequence '())
+        (sorted-instruction-list '())
+        (entry-points-list '())
+        (stack-registers '()))
     (let ((the-ops
             (list (list 'initialize-stack
                          (lambda () (stack 'initialize)))))
           (register-table
-            (list (list 'pc pc) (list 'flag flag))))
+            (list (list 'pc pc) (list 'flag flag)))
+          (register-source-table
+            (list (list 'pc) (list 'flag))))
 
       ; allocation of the new register object with the given name
       (define (allocate-register name)
         (if (assoc name register-table)
           (error "Multiply defined register: " name)
-          (set! register-table
-            (cons (list name (make-register name))
-                  register-table)))
+          (begin
+            (set! register-source-table (cons (list name)
+                                              register-source-table))
+            (set! register-table
+                  (cons (list name (make-register name))
+                        register-table))))
         'register-allocated)
 
       ; get the value of the register
@@ -107,6 +120,28 @@
                (lambda (ops) (set! the-ops (append the-ops ops))))
               ((eq? message 'stack) stack)
               ((eq? message 'operations) the-ops)
+              ;logging operations
+              ((eq? message 'store-instructions)
+               (lambda (inst-list) (set! sorted-instruction-list inst-list)))
+              ((eq? message 'add-entry-point)
+               (lambda (entry-point)
+                 (set! entry-points-list (add-unique entry-point entry-points-list))))
+              ((eq? message 'add-stack-register)
+               (lambda (stack-register) (set! stack-registers (add-unique stack-register stack-registers))))
+             ((eq? message 'store-register-source)
+              (lambda (register-name register-source)
+                (let ((pair (assoc register-name register-source-table)))
+                  (if pair
+                      (if (null? (cdr pair))
+                          ;; If no sources yet, create the list
+                          (set-cdr! pair (list register-source))
+                          ;; Otherwise add uniquely to existing list
+                          (set-cdr! pair (add-unique register-source (cdr pair))))
+                      (error "Unknown register -- STORE-REGISTER-SOURCE" register-name)))))
+              ((eq? message 'get-instructions) sorted-instruction-list)
+              ((eq? message 'get-entry-points) entry-points-list)
+              ((eq? message 'get-stack-registers) stack-registers)
+              ((eq? message 'get-register-sources) register-source-table)
               (else (error "Unknown request -- MACHINE" message))))
       dispatch)))
 
@@ -148,6 +183,7 @@
         (flag (get-register machine 'flag))
         (stack (machine 'stack))
         (ops (machine 'operations)))
+    ((machine 'store-instructions) (get-sorted-instructions insts))
     (for-each
      (lambda (inst)
        (set-instruction-execution-proc!
@@ -156,6 +192,22 @@
          (instruction-text inst) labels machine
          pc flag stack ops)))
      insts)))
+
+
+;store the sorted instructions in a table
+(define (get-sorted-instructions insts)
+  (let* ((inst-table (make-table))
+         (get (inst-table 'lookup-proc))
+         (put (inst-table 'insert-proc!)))
+    (for-each (lambda (inst)
+                (let ((inst-text (instruction-text inst)))
+                  (put (inst-type inst-text)
+                       (inst-args inst-text)
+                       inst-text)))
+              insts)
+    (inst-table 'get-all-values)))
+(define (inst-type inst) (car inst))
+(define (inst-args inst) (cdr inst))
 
 (define (make-instruction text)
   (cons text '()))
@@ -198,8 +250,10 @@
 
 ; assignment procedure
 (define (make-assign inst machine labels operations pc)
-  (let ((target (get-register machine (assign-reg-name inst)))
-        (value-exp (assign-value-exp inst)))
+  (let* ((target-reg-name (assign-reg-name inst))
+         (target (get-register machine target-reg-name))
+         (value-exp (assign-value-exp inst)))
+    ((machine 'store-register-source) target-reg-name value-exp)
     (let ((value-proc
            (if (operation-exp? value-exp)
                (make-operation-exp
@@ -260,6 +314,7 @@
            (let ((reg
                   (get-register machine
                                 (register-exp-reg dest))))
+             ((machine 'add-entry-point) (register-exp-reg dest)) ;log entry point registers
              (lambda ()
                (set-contents! pc (get-contents reg)))))
           (else (error "Bad GOTO instruction -- ASSEMBLE"
@@ -270,16 +325,18 @@
 
 ; save to stack execution procedure
 (define (make-save inst machine stack pc)
-  (let ((reg (get-register machine
-                           (stack-inst-reg-name inst))))
+  (let* ((reg-name (stack-inst-reg-name inst))
+         (reg (get-register machine reg-name)))
+    ((machine 'add-stack-register) reg-name)
     (lambda ()
       (push stack (get-contents reg))
       (advance-pc pc))))
 
 ; restore from stack execution procedure
 (define (make-restore inst machine stack pc)
-  (let ((reg (get-register machine
-                           (stack-inst-reg-name inst))))
+  (let* ((reg-name (stack-inst-reg-name inst))
+         (reg (get-register machine reg-name)))
+    ((machine 'add-stack-register) reg-name)
     (lambda ()
       (set-contents! reg (pop stack))
       (advance-pc pc))))
@@ -366,6 +423,53 @@
     (eq? (car exp) tag)
     false))
 
+;Exercise 5.12
+
+;;Table operations
+(define (make-table)
+  (let ((local-table (list '*table*)))
+    (define (lookup key-1 key-2)
+      (let ((subtable (assoc key-1 (cdr local-table))))
+        (if subtable
+            (let ((record (assoc key-2 (cdr subtable))))
+              (if record
+                  (cdr record)
+                  #f))
+            #f)))
+    (define (insert! key-1 key-2 value)
+      (let ((subtable (assoc key-1 (cdr local-table))))
+        (if subtable
+            (let ((record (assoc key-2 (cdr subtable))))
+              (if record
+                  (set-cdr! record value)
+                  (set-cdr! subtable
+                            (cons (cons key-2 value)
+                                  (cdr subtable)))))
+            (set-cdr! local-table
+                      (cons (list key-1
+                                  (cons key-2 value))
+                            (cdr local-table)))))
+      'ok)
+    ;; Add this function to get all values as a flat list
+    (define (get-all-values)
+      (let loop ((entries (cdr local-table))
+                 (result '()))
+        (if (null? entries)
+            result
+            (let* ((entry (car entries))
+                   (key1 (car entry))
+                   (records (cdr entry)))
+              (loop (cdr entries)
+                    (append result
+                            (map cdr records)))))))
+    (define (dispatch m)
+      (cond ((eq? m 'lookup-proc) lookup)
+            ((eq? m 'insert-proc!) insert!)
+            ((eq? m 'get-all-values) (get-all-values))  ;; New message
+            (else (error "Unknown operation - TABLE" m))))
+    dispatch))
+                
+
 ;Test GCD machine
 (define gcd-machine
   (make-machine
@@ -384,3 +488,16 @@
 (set-register-contents! gcd-machine 'b 40)
 (start gcd-machine)
 (get-register-contents gcd-machine 'a)
+
+(newline)
+(display "Sorted instructions:\n")
+(gcd-machine 'get-instructions)
+(newline)
+(display "Entry points:\n")
+(gcd-machine 'get-entry-points)
+(newline)
+(display "Stack registers:\n")
+(gcd-machine 'get-stack-registers)
+(newline)
+(display "Register source lists:\n")
+(gcd-machine 'get-register-sources)
