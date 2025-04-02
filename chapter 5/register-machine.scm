@@ -4,14 +4,21 @@
 (#%provide set-register-contents!)
 (#%provide get-register-contents)
 (#%provide start)
+(#%provide trace-register)
+(#%provide stop-trace-register)
+(#%provide set-breakpoint)
+(#%provide cancel-breakpoint)
+(#%provide cancel-all-breakpoints)
 
 ; model of the machine is represented as a procedure with local state.
 
-(define (make-machine register-names ops controller-text)
+(define (make-machine ops controller-text)
   (let ((machine (make-new-machine))) ; creating one empty machine model
+    #|Exercise 5.13 - registers are auto-allocated from the source code
     (for-each (lambda (register-name)
                 ((machine 'allocate-register) register-name)) ; allocating registers in the machine
               register-names)
+    |#
     ((machine 'install-operations) ops) ; passing a message to install operations
     ((machine 'install-instruction-sequence) ; passing a message to install instruction sequenc
      (assemble controller-text machine)) ; instruction sequence is converted to the machine representation
@@ -20,11 +27,21 @@
 ; register is a procedure with the local state and set of messages that it answers to.
 
 (define (make-register name)
-  (let ((contents '*unassigned*))
+  (let ((contents '*unassigned*)
+        (trace-instructions #f))
+    (define (set-register-value! value)
+      (if trace-instructions
+          (begin
+            (display "Register: ") (display name)
+            (display "\tOld value: ") (display contents)
+            (display "\tNew value: ") (display value)(newline)))
+      (set! contents value))
+    
     (define (dispatch message)
       (cond ((eq? message 'get) contents)
-            ((eq? message 'set)
-             (lambda (value) (set! contents value)))
+            ((eq? message 'set) set-register-value!)
+            ((eq? message 'trace-on) (set! trace-instructions #t))
+            ((eq? message 'trace-off) (set! trace-instructions #f))
             (else
               (error "Unknown request -- REGISTER" message))))
     dispatch))
@@ -34,23 +51,40 @@
 
 ; stack implementation as a procedure with local state
 (define (make-stack)
-  (let ((s '()))
+  (let ((s '())
+        (number-pushes 0)
+        (max-depth 0)
+        (current-depth 0))
     (define (push x)
-      (set! s (cons x s)))
+      (set! s (cons x s))
+      (set! number-pushes (+ 1 number-pushes))
+      (set! current-depth (+ 1 current-depth))
+      (set! max-depth (max current-depth max-depth)))
     (define (pop)
       (if (null? s)
-        (error "Empty stack -- POP")
-        (let ((top (car s)))
-          (set! s (cdr s))
-          top)))
+          (error "Empty stack -- POP")
+          (let ((top (car s)))
+            (set! s (cdr s))
+            (set! current-depth (- current-depth 1))
+            top)))    
     (define (initialize)
       (set! s '())
+      (set! number-pushes 0)
+      (set! max-depth 0)
+      (set! current-depth 0)
       'done)
+    (define (print-statistics)
+      (newline)
+      (display (list 'total-pushes  '= number-pushes
+                     'maximum-depth '= max-depth)))
     (define (dispatch message)
       (cond ((eq? message 'push) push)
             ((eq? message 'pop) (pop))
             ((eq? message 'initialize) (initialize))
-            (else (error "Unknown request -- STACK" message))))
+            ((eq? message 'print-statistics)
+             (print-statistics))
+            (else
+             (error "Unknown request -- STACK" message))))
     dispatch))
 
 (define (pop stack) (stack 'pop))
@@ -70,33 +104,46 @@
         (the-instruction-sequence '())
         (sorted-instruction-list '())
         (entry-points-list '())
-        (stack-registers '()))
+        (stack-registers '())
+        (inst-exec-count 0)
+        (trace-instructions #f)
+        (breakpoints '())
+        (continue-from-breakpoint #f))
     (let ((the-ops
-            (list (list 'initialize-stack
-                         (lambda () (stack 'initialize)))))
+           (list (list 'initialize-stack
+                       (lambda () (stack 'initialize)))
+                 (list 'print-stack-statistics
+                       (lambda () (stack 'print-statistics)))))
           (register-table
             (list (list 'pc pc) (list 'flag flag)))
           (register-source-table
             (list (list 'pc) (list 'flag))))
-
-      ; allocation of the new register object with the given name
-      (define (allocate-register name)
-        (if (assoc name register-table)
-          (error "Multiply defined register: " name)
-          (begin
-            (set! register-source-table (cons (list name)
-                                              register-source-table))
-            (set! register-table
-                  (cons (list name (make-register name))
-                        register-table))))
-        'register-allocated)
 
       ; get the value of the register
       (define (lookup-register name)
         (let ((val (assoc name register-table)))
           (if val
             (cadr val)
-            (error "Unknown register: " name))))
+            ;Exercise 5.13 - registers are auto-allocated from the source code
+            (begin
+              (set! register-source-table (cons (list name)
+                                                register-source-table))
+              (let ((new-reg (make-register name)))
+                (set! register-table
+                      (cons (list name new-reg)
+                            register-table))
+                new-reg)))))
+
+      ;Exercise 5.12
+      (define (log-register-source register-name register-source)
+        (let ((pair (assoc register-name register-source-table)))
+          (if pair
+              (if (null? (cdr pair))
+                  ;; If no sources yet, create the list
+                  (set-cdr! pair (list register-source))
+                  ;; Otherwise add uniquely to existing list
+                  (set-cdr! pair (add-unique register-source (cdr pair))))
+              (error "Unknown register -- STORE-REGISTER-SOURCE" register-name))))
 
       ; run the machine
       (define (execute)
@@ -104,8 +151,33 @@
           (if (null? insts)
             'done
             (begin
-              ((instruction-execution-proc (car insts)))
+              (set! inst-exec-count (+ inst-exec-count 1))
+              (let* ((inst (car insts))
+                     (preceding-label (instruction-preceding-label inst))
+                     (preceding-label-name (inst-label-name preceding-label))
+                     (line-num (inst-label-count preceding-label)))
+                (if trace-instructions
+                    (begin
+                      (if (= line-num 1)
+                          (begin
+                            (display preceding-label-name) (newline)))
+                      (display (instruction-text inst)) (newline)))
+                ((instruction-execution-proc inst)))
               (execute)))))
+
+      ;set breakpoints
+      (define (add-breakpoint label n)
+        (set! breakpoints (cons (list label n) breakpoints)))
+
+      ;remove breakpoints
+      (define (remove-breakpoint label n)
+        (set! breakpoints (filter (lambda (breakpoint)
+                                    (not (eq? breakpoint (list label n))))
+                                  breakpoints)))
+
+      ;remove all breakpoints
+      (define (remove-all-breakpoints)
+        (set! breakpoints '()))
 
       ; external interface
       (define (dispatch message)
@@ -114,7 +186,7 @@
                (execute))
               ((eq? message 'install-instruction-sequence)
                (lambda (seq) (set! the-instruction-sequence seq)))
-              ((eq? message 'allocate-register) allocate-register)
+              ;((eq? message 'allocate-register) allocate-register)
               ((eq? message 'get-register) lookup-register)
               ((eq? message 'install-operations)
                (lambda (ops) (set! the-ops (append the-ops ops))))
@@ -128,20 +200,26 @@
                  (set! entry-points-list (add-unique entry-point entry-points-list))))
               ((eq? message 'add-stack-register)
                (lambda (stack-register) (set! stack-registers (add-unique stack-register stack-registers))))
-             ((eq? message 'store-register-source)
-              (lambda (register-name register-source)
-                (let ((pair (assoc register-name register-source-table)))
-                  (if pair
-                      (if (null? (cdr pair))
-                          ;; If no sources yet, create the list
-                          (set-cdr! pair (list register-source))
-                          ;; Otherwise add uniquely to existing list
-                          (set-cdr! pair (add-unique register-source (cdr pair))))
-                      (error "Unknown register -- STORE-REGISTER-SOURCE" register-name)))))
+              ((eq? message 'store-register-source) log-register-source)
               ((eq? message 'get-instructions) sorted-instruction-list)
               ((eq? message 'get-entry-points) entry-points-list)
               ((eq? message 'get-stack-registers) stack-registers)
               ((eq? message 'get-register-sources) register-source-table)
+              ;tracing operations
+              ((eq? message 'get-exec-count)
+               (let ((temp inst-exec-count))
+                 (set! inst-exec-count 0)
+                 temp))
+              ((eq? message 'trace-on) (set! trace-instructions #t))
+              ((eq? message 'trace-off) (set! trace-instructions #f))
+              ((eq? message 'trace-reg-on)
+               (lambda (reg-name) ((lookup-register reg-name) 'trace-on)))
+              ((eq? message 'trace-reg-off)
+               (lambda (reg-name) ((lookup-register reg-name) 'trace-off)))
+              ;breakpoint operations
+              ((eq? message 'add-breakpoint) add-breakpoint)
+              ((eq? message 'remove-breakpoint) remove-breakpoint)
+              ((eq? message 'remove-all-breakpoints) remove-all-breakpoints)
               (else (error "Unknown request -- MACHINE" message))))
       dispatch)))
 
@@ -151,6 +229,11 @@
   (set-contents! (get-register machine register-name) value)
   'done)
 (define (get-register machine reg-name) ((machine 'get-register) reg-name))
+(define (trace-register machine reg-name) ((machine 'trace-reg-on) reg-name))
+(define (stop-trace-register machine reg-name) ((machine 'trace-reg-off) reg-name))
+(define (set-breakpoint machine label n) ((machine 'add-breakpoint) label n))
+(define (cancel-breakpoint machine label n) ((machine 'remove-breakpoint) label n))
+(define (cancel-all-breakpoints machine) ((machine 'remove-all-breakpoints)))
 
 
 ; assembler is converting list of controller steps to a set of executable instructions
@@ -171,7 +254,7 @@
               (let ((val (assoc next-inst labels)))
                 (if val
                     (error "Multiple definitions of label -- EXTRACT-LABELS" next-inst)
-                    (receive insts
+                    (receive (attach-label insts next-inst)
                              (cons (make-label-entry next-inst insts)
                                    labels))))
               (receive (cons (make-instruction next-inst)
@@ -209,14 +292,37 @@
 (define (inst-type inst) (car inst))
 (define (inst-args inst) (cdr inst))
 
+(define (attach-label insts label)
+  (define (attach-label-iter rest-insts label n)
+    (if (null? rest-insts)
+        rest-insts
+        (let ((next-inst (car rest-insts)))
+          (if (or (null? next-inst)
+                  (not (null? (cdr next-inst))))
+              'done
+              (begin
+                (set-cdr! next-inst (list label n))
+                (attach-label-iter (cdr rest-insts)
+                                   label
+                                   (+ n 1)))))))
+  (attach-label-iter insts label 1)
+  insts)
+(define (inst-label-count inst-label)
+  (cadr inst-label))
+(define (inst-label-name inst-label)
+  (car inst-label))
+
 (define (make-instruction text)
   (cons text '()))
 (define (instruction-text inst)
   (car inst))
 (define (instruction-execution-proc inst)
-  (cdr inst))
+  (cadr inst))
+(define (instruction-preceding-label inst)
+  (cddr inst))
 (define (set-instruction-execution-proc! inst proc)
-  (set-cdr! inst proc))
+  (let ((prev-label (cdr inst)))
+    (set-cdr! inst (cons proc prev-label))))
 
 
 (define (make-label-entry label-name insts)
@@ -468,12 +574,17 @@
             ((eq? m 'get-all-values) (get-all-values))  ;; New message
             (else (error "Unknown operation - TABLE" m))))
     dispatch))
-                
+
+(define (filter predicate sequence)
+  (cond ((null? sequence) '())
+        ((predicate (car sequence))
+         (cons (car sequence)
+               (filter predicate (cdr sequence))))
+        (else (filter predicate (cdr sequence)))))
 
 ;Test GCD machine
 (define gcd-machine
   (make-machine
-   '(a b t)
    (list (list 'rem remainder) (list '= =))
    '(test-b
        (test (op =) (reg b) (const 0))
@@ -487,9 +598,14 @@
 (set-register-contents! gcd-machine 'a 206)
 (set-register-contents! gcd-machine 'b 40)
 (start gcd-machine)
-(get-register-contents gcd-machine 'a)
-
+(display "GCD(206,40) = ")(get-register-contents gcd-machine 'a)
 (newline)
+(display "Stack statistics")
+((gcd-machine 'stack) 'print-statistics)(newline)
+(display "Instruction count")(newline)
+(gcd-machine 'get-exec-count)
+
+(newline)(newline)
 (display "Sorted instructions:\n")
 (gcd-machine 'get-instructions)
 (newline)

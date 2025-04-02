@@ -7,7 +7,6 @@
 (display "Factorial (iterative implementation)\n")
 (define iter-factorial-machine
   (make-machine
-   '(prod count n)
    (list (list '> >) (list '* *) (list '+ +))
    '(controller
        (assign prod (const 1))
@@ -44,7 +43,6 @@
   (/ (+ guess (/ x guess)) 2))
 (define sqrt-newton-machine-1
   (make-machine
-   '(guess x)
    (list (list 'good-enough? good-enough?) (list 'improve improve))
    '(controller
        (assign guess (const 1))
@@ -72,7 +70,6 @@
 (display "Sqrt Newton method (primitive functions)\n")
 (define sqrt-newton-machine-2
   (make-machine
-   '(guess x t)
    (list (list '* *) (list '+ +) (list '- -) (list '/ /) (list '< <) (list 'abs abs))
    '(controller
        (assign guess (const 1))
@@ -108,7 +105,6 @@
 (display "Recursive exponentiation\n")
 (define recursive-expt-machine
   (make-machine
-   '(n val b continue)
    (list (list '* *) (list '= =) (list '- -))
    '(controller
        (assign continue (label expt-done))
@@ -130,14 +126,20 @@
 
 (set-register-contents! recursive-expt-machine 'b 2)
 (set-register-contents! recursive-expt-machine 'n 3)
+((recursive-expt-machine 'stack) 'initialize)
 (start recursive-expt-machine)
 (display "2^3 = ")
 (get-register-contents recursive-expt-machine 'val)
+((recursive-expt-machine 'stack) 'print-statistics)
+(newline)
 
 (set-register-contents! recursive-expt-machine 'n 10)
+((recursive-expt-machine 'stack) 'initialize)
 (start recursive-expt-machine)
 (display "2^10 = ")
 (get-register-contents recursive-expt-machine 'val)
+((recursive-expt-machine 'stack) 'print-statistics)
+(newline)
 
 (newline)
 
@@ -147,7 +149,6 @@
 (display "Iterative exponentiation\n")
 (define iterative-expt-machine
   (make-machine
-   '(n val b)
    (list (list '* *) (list '= =) (list '- -))
    '(controller
        (assign val (const 1))
@@ -161,14 +162,20 @@
 
 (set-register-contents! iterative-expt-machine 'b 2)
 (set-register-contents! iterative-expt-machine 'n 3)
+((iterative-expt-machine 'stack) 'initialize)
 (start iterative-expt-machine)
 (display "2^3 = ")
 (get-register-contents iterative-expt-machine 'val)
+((iterative-expt-machine 'stack) 'print-statistics)
+(newline)
 
 (set-register-contents! iterative-expt-machine 'n 10)
+((iterative-expt-machine 'stack) 'initialize)
 (start iterative-expt-machine)
 (display "2^10 = ")
 (get-register-contents iterative-expt-machine 'val)
+((iterative-expt-machine 'stack) 'print-statistics)
+(newline)
 
 
 (newline)(newline)
@@ -178,7 +185,6 @@
 (display "Fibonacci machine (eliminating one save and restore)\n")
 (define fibonacci-machine
   (make-machine
-   '(continue n val)
    (list (list '+ +) (list '- -) (list '< <))
    '(controller
        (assign continue (label fib-done))
@@ -211,19 +217,28 @@
        fib-done)))
 
 (set-register-contents! fibonacci-machine 'n 3)
+((fibonacci-machine 'stack) 'initialize)
 (start fibonacci-machine)
 (display "Fib(3) = ")
 (get-register-contents fibonacci-machine 'val)
+((fibonacci-machine 'stack) 'print-statistics)
+(newline)
 
 (set-register-contents! fibonacci-machine 'n 4)
+((fibonacci-machine 'stack) 'initialize)
 (start fibonacci-machine)
 (display "Fib(4) = ")
 (get-register-contents fibonacci-machine 'val)
+((fibonacci-machine 'stack) 'print-statistics)
+(newline)
 
 (set-register-contents! fibonacci-machine 'n 5)
+((fibonacci-machine 'stack) 'initialize)
 (start fibonacci-machine)
 (display "Fib(5) = ")
 (get-register-contents fibonacci-machine 'val)
+((fibonacci-machine 'stack) 'print-statistics)
+(newline)
 
 
 (newline)(newline)
@@ -257,7 +272,6 @@
 (display "Fibonacci machine exploiting stack behavior\n")
 (define fibonacci-machine-2
   (make-machine
-   '(continue n val)
    (list (list '+ +) (list '- -) (list '< <))
    '(controller
        (assign continue (label fib-done))
@@ -288,20 +302,29 @@
          (goto (reg continue))
        fib-done)))
 
-(set-register-contents! fibonacci-machine 'n 3)
-(start fibonacci-machine)
+(set-register-contents! fibonacci-machine-2 'n 3)
+((fibonacci-machine-2 'stack) 'initialize)
+(start fibonacci-machine-2)
 (display "Fib(3) = ")
-(get-register-contents fibonacci-machine 'val)
+(get-register-contents fibonacci-machine-2 'val)
+((fibonacci-machine-2 'stack) 'print-statistics)
+(newline)
 
-(set-register-contents! fibonacci-machine 'n 4)
-(start fibonacci-machine)
+(set-register-contents! fibonacci-machine-2 'n 4)
+((fibonacci-machine-2 'stack) 'initialize)
+(start fibonacci-machine-2)
 (display "Fib(4) = ")
-(get-register-contents fibonacci-machine 'val)
+(get-register-contents fibonacci-machine-2 'val)
+((fibonacci-machine-2 'stack) 'print-statistics)
+(newline)
 
-(set-register-contents! fibonacci-machine 'n 5)
-(start fibonacci-machine)
+(set-register-contents! fibonacci-machine-2 'n 5)
+((fibonacci-machine-2 'stack) 'initialize)
+(start fibonacci-machine-2)
 (display "Fib(5) = ")
-(get-register-contents fibonacci-machine 'val)
+(get-register-contents fibonacci-machine-2 'val)
+((fibonacci-machine-2 'stack) 'print-statistics)
+(newline)
 
 ;TODO: 5.11b and 5.11c
 
@@ -385,3 +408,120 @@
 (newline)
 (display "Register source lists:\n")
 (compact-print-list (fibonacci-machine 'get-register-sources))
+
+
+(newline)(newline)
+
+
+;Exercise 5.14, 5.15
+(display "Exercise 5.14, 5.15\n")
+(display "Factorial (recursive implementation)\n")
+(display "num_stack_pushes = 2(n -1)\n")
+(define rec-factorial-machine
+  (make-machine
+   (list (list '* *) (list '= =) (list '- -))
+   '(controller
+       (perform (op initialize-stack))
+       (assign continue (label fact-done))     ; set up final return address
+     fact-loop
+       (test (op =) (reg n) (const 1))
+       (branch (label base-case))
+       ;; Set up for the recursive call by saving n and continue.
+       ;; Set up continue so that the computation will continue
+       ;; at after-fact when the subroutine returns.
+       (save continue)
+       (save n)
+       (assign n (op -) (reg n) (const 1))
+       (assign continue (label after-fact))
+       (goto (label fact-loop))
+     after-fact
+       (restore n)
+       (restore continue)
+       (assign val (op *) (reg n) (reg val))   ; val now contains n(n - 1)!
+       (goto (reg continue))                   ; return to caller
+     base-case
+       (assign val (const 1))                  ; base case: 1! = 1
+       (goto (reg continue))                   ; return to caller
+     fact-done
+       (perform (op print-stack-statistics)))))
+
+(set-register-contents! rec-factorial-machine 'n 3)
+(start rec-factorial-machine)
+(display "Instruction count: ")
+(rec-factorial-machine 'get-exec-count)
+(display "fact(3) = ")
+(get-register-contents rec-factorial-machine 'val)
+
+(set-register-contents! rec-factorial-machine 'n 4)
+(start rec-factorial-machine)
+(display "Instruction count: ")
+(rec-factorial-machine 'get-exec-count)
+(display "fact(4) = ")
+(get-register-contents rec-factorial-machine 'val)
+
+(set-register-contents! rec-factorial-machine 'n 5)
+(start rec-factorial-machine)
+(display "Instruction count: ")
+(rec-factorial-machine 'get-exec-count)
+(display "fact(5) = ")
+(get-register-contents rec-factorial-machine 'val)
+
+(set-register-contents! rec-factorial-machine 'n 6)
+(start rec-factorial-machine)
+(display "Instruction count: ")
+(rec-factorial-machine 'get-exec-count)
+(display "fact(6) = ")
+(get-register-contents rec-factorial-machine 'val)
+
+(set-register-contents! rec-factorial-machine 'n 10)
+(start rec-factorial-machine)
+(display "Instruction count: ")
+(rec-factorial-machine 'get-exec-count)
+(display "fact(10) = ")
+(get-register-contents rec-factorial-machine 'val)
+
+
+(newline)(newline)
+
+
+;Exercise 5.16, 5.17
+(display "Exercise 5.16, 5.17\n")
+(display "Tracing fact(4)\n")
+(rec-factorial-machine 'trace-on)
+(set-register-contents! rec-factorial-machine 'n 4)
+(start rec-factorial-machine)
+(display "Instruction count: ")
+(rec-factorial-machine 'get-exec-count)
+(display "fact(4) = ")
+(get-register-contents rec-factorial-machine 'val)
+(rec-factorial-machine 'trace-off)
+
+
+(newline)(newline)
+
+
+;Exercise 5.18
+(display "Exercise 5.18\n")
+(display "Tracing register val during computation of fact(5)\n")
+(trace-register rec-factorial-machine 'val)
+(set-register-contents! rec-factorial-machine 'n 5)
+(start rec-factorial-machine)
+(display "fact(5) = ")
+(get-register-contents rec-factorial-machine 'val)
+(stop-trace-register rec-factorial-machine 'val)
+
+
+(newline)(newline)
+
+
+;Exercise 5.19
+(display "Exercise 5.19\n")
+(set-breakpoint rec-factorial-machine 'after-fact 2)
+(set-breakpoint rec-factorial-machine 'after-fact 1)
+(cancel-breakpoint rec-factorial-machine 'after-fact 1) ;delete breakpoint
+(rec-factorial-machine 'trace-on)
+(display "Breaking at 2nd line after 'after-fact during computation of fact(4)\n")
+(set-register-contents! rec-factorial-machine 'n 4)
+(start rec-factorial-machine)
+(display "fact(4) = ")
+(get-register-contents rec-factorial-machine 'val)
