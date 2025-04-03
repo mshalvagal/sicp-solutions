@@ -9,6 +9,7 @@
 (#%provide set-breakpoint)
 (#%provide cancel-breakpoint)
 (#%provide cancel-all-breakpoints)
+(#%provide proceed-machine)
 
 ; model of the machine is represented as a procedure with local state.
 
@@ -107,6 +108,8 @@
         (stack-registers '())
         (inst-exec-count 0)
         (trace-instructions #f)
+        (labels-n-indexed '())
+        (labels-name-indexed '())
         (breakpoints '())
         (continue-from-breakpoint #f))
     (let ((the-ops
@@ -153,27 +156,49 @@
             (begin
               (set! inst-exec-count (+ inst-exec-count 1))
               (let* ((inst (car insts))
-                     (preceding-label (instruction-preceding-label inst))
-                     (preceding-label-name (inst-label-name preceding-label))
-                     (line-num (inst-label-count preceding-label)))
+                     (line-num (instruction-linenum inst))
+                     (line-label (assoc line-num labels-n-indexed)))
                 (if trace-instructions
                     (begin
-                      (if (= line-num 1)
-                          (begin
-                            (display preceding-label-name) (newline)))
+                      (if line-label
+                          (begin (display (cadr line-label)) (newline)))
                       (display (instruction-text inst)) (newline)))
-                ((instruction-execution-proc inst)))
-              (execute)))))
+                (if (null? breakpoints)
+                    (begin ((instruction-execution-proc inst))
+                           (execute))
+                    (let ((break? (assoc line-num breakpoints)))
+                      (cond ((and break? (not continue-from-breakpoint))
+                             (display "Breaking at: ")(display break?)(newline))
+                            (continue-from-breakpoint
+                             (set! continue-from-breakpoint #f)
+                             ((instruction-execution-proc inst))
+                             (execute))
+                            (else
+                             ((instruction-execution-proc inst))
+                             (execute))))))))))
+
+      ;add labels
+      (define (store-label label n)
+        (set! labels-n-indexed (cons (list n label) labels-n-indexed))
+        (set! labels-name-indexed (cons (list label n) labels-name-indexed)))
 
       ;set breakpoints
       (define (add-breakpoint label n)
-        (set! breakpoints (cons (list label n) breakpoints)))
+        (let* ((pair (assoc label labels-name-indexed))
+               (ref-linenum (cadr pair))
+               (linenum (- (+ ref-linenum n) 1)))
+          (set! breakpoints (cons (list linenum (list label n))
+                                  breakpoints))))
 
       ;remove breakpoints
       (define (remove-breakpoint label n)
-        (set! breakpoints (filter (lambda (breakpoint)
-                                    (not (eq? breakpoint (list label n))))
-                                  breakpoints)))
+        (let* ((pair (assoc label labels-name-indexed))
+               (ref-linenum (cadr pair))
+               (linenum (- (+ ref-linenum n) 1)))
+          (set! breakpoints (filter (lambda (breakpoint)
+                                      (not (eq? (car breakpoint)
+                                                linenum)))
+                                    breakpoints))))
 
       ;remove all breakpoints
       (define (remove-all-breakpoints)
@@ -217,9 +242,13 @@
               ((eq? message 'trace-reg-off)
                (lambda (reg-name) ((lookup-register reg-name) 'trace-off)))
               ;breakpoint operations
+              ((eq? message 'store-label) store-label)
               ((eq? message 'add-breakpoint) add-breakpoint)
               ((eq? message 'remove-breakpoint) remove-breakpoint)
               ((eq? message 'remove-all-breakpoints) remove-all-breakpoints)
+              ((eq? message 'proceed-machine)
+               (set! continue-from-breakpoint #t)
+               (execute))
               (else (error "Unknown request -- MACHINE" message))))
       dispatch)))
 
@@ -229,11 +258,15 @@
   (set-contents! (get-register machine register-name) value)
   'done)
 (define (get-register machine reg-name) ((machine 'get-register) reg-name))
+
 (define (trace-register machine reg-name) ((machine 'trace-reg-on) reg-name))
 (define (stop-trace-register machine reg-name) ((machine 'trace-reg-off) reg-name))
+
 (define (set-breakpoint machine label n) ((machine 'add-breakpoint) label n))
 (define (cancel-breakpoint machine label n) ((machine 'remove-breakpoint) label n))
 (define (cancel-all-breakpoints machine) ((machine 'remove-all-breakpoints)))
+
+(define (proceed-machine machine) (machine 'proceed-machine))
 
 
 ; assembler is converting list of controller steps to a set of executable instructions
@@ -242,24 +275,28 @@
   (extract-labels controller-text
                   (lambda (insts labels)
                     (update-insts! insts labels machine)
-                    insts)))
+                    insts)
+                  1))
 
-(define (extract-labels text receive)
+(define (extract-labels text receive linenum)
   (if (null? text)
-    (receive '() '())
-    (extract-labels (cdr text)
-      (lambda (insts labels)
-        (let ((next-inst (car text)))
-          (if (symbol? next-inst)
-              (let ((val (assoc next-inst labels)))
-                (if val
-                    (error "Multiple definitions of label -- EXTRACT-LABELS" next-inst)
-                    (receive (attach-label insts next-inst)
-                             (cons (make-label-entry next-inst insts)
-                                   labels))))
-              (receive (cons (make-instruction next-inst)
-                             insts)
-                       labels)))))))
+      (receive '() '())
+      (let ((next-inst (car text)))
+        (extract-labels (cdr text)
+                        (lambda (insts labels)
+                          (if (symbol? next-inst)
+                              (let ((val (assoc next-inst labels)))
+                                (if val
+                                    (error "Multiple definitions of label -- EXTRACT-LABELS" next-inst)
+                                    (receive insts
+                                             (cons (make-label-entry next-inst insts)
+                                                   labels))))
+                              (receive (cons (make-instruction next-inst linenum)
+                                             insts)
+                                       labels)))
+                        (if (symbol? next-inst)
+                            linenum
+                            (+ linenum 1))))))
 
 (define (update-insts! insts labels machine)
   (let ((pc (get-register machine 'pc))
@@ -274,7 +311,14 @@
         (make-execution-procedure
          (instruction-text inst) labels machine
          pc flag stack ops)))
-     insts)))
+     insts)
+    (for-each
+     (lambda (label-entry)
+       (let ((name (label-name label-entry))
+             (inst (label-inst label-entry)))
+         (if (not (null? inst))
+             ((machine 'store-label) name (instruction-linenum inst)))))
+     labels)))
 
 
 ;store the sorted instructions in a table
@@ -292,45 +336,32 @@
 (define (inst-type inst) (car inst))
 (define (inst-args inst) (cdr inst))
 
-(define (attach-label insts label)
-  (define (attach-label-iter rest-insts label n)
-    (if (null? rest-insts)
-        rest-insts
-        (let ((next-inst (car rest-insts)))
-          (if (or (null? next-inst)
-                  (not (null? (cdr next-inst))))
-              'done
-              (begin
-                (set-cdr! next-inst (list label n))
-                (attach-label-iter (cdr rest-insts)
-                                   label
-                                   (+ n 1)))))))
-  (attach-label-iter insts label 1)
-  insts)
-(define (inst-label-count inst-label)
-  (cadr inst-label))
-(define (inst-label-name inst-label)
-  (car inst-label))
-
-(define (make-instruction text)
-  (cons text '()))
-(define (instruction-text inst)
+(define (make-instruction text linenum)
+  (list linenum text))
+(define (instruction-linenum inst)
   (car inst))
-(define (instruction-execution-proc inst)
+(define (instruction-text inst)
   (cadr inst))
-(define (instruction-preceding-label inst)
+(define (instruction-execution-proc inst)
   (cddr inst))
 (define (set-instruction-execution-proc! inst proc)
-  (let ((prev-label (cdr inst)))
-    (set-cdr! inst (cons proc prev-label))))
+  (let ((inst-text (instruction-text inst)))
+    (set-cdr! inst (cons inst-text proc))))
 
 
 (define (make-label-entry label-name insts)
-  (cons label-name insts))
+  (list label-name
+        insts))
+(define (label-name label-entry)
+  (car label-entry))
+(define (label-inst label-entry)
+  (if (null? (cadr label-entry))
+      '()
+      (caadr label-entry)))
 (define (lookup-label labels label-name)
   (let ((val (assoc label-name labels)))
     (if val
-        (cdr val)
+        (cadr val)
         (error "Undefined label -- ASSEMBLE" label-name))))
 
 ; we have to make execution procedure for every machine instruction.
