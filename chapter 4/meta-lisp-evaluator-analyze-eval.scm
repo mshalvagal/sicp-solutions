@@ -450,6 +450,6 @@
                      '<procedure-env>))
       (display object)))
 
-(driver-loop)
+;(driver-loop)
 
 ;(metacircular-eval '(call * 2 2) the-global-environment)

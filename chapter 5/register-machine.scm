@@ -613,6 +613,7 @@
                (filter predicate (cdr sequence))))
         (else (filter predicate (cdr sequence)))))
 
+#|
 ;Test GCD machine
 (define gcd-machine
   (make-machine
@@ -648,3 +649,4 @@
 (newline)
 (display "Register source lists:\n")
 (gcd-machine 'get-register-sources)
+|#
