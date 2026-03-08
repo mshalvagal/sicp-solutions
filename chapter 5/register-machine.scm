@@ -119,8 +119,7 @@
                        (lambda () (stack 'print-statistics)))))
           (register-table
             (list (list 'pc pc) (list 'flag flag)))
-          (register-source-table
-            (list (list 'pc) (list 'flag))))
+          (register-source-table '()))
 
       ; get the value of the register
       (define (lookup-register name)
@@ -168,7 +167,8 @@
                            (execute))
                     (let ((break? (assoc line-num breakpoints)))
                       (cond ((and break? (not continue-from-breakpoint))
-                             (display "Breaking at: ")(display break?)(newline))
+                             (display "Breaking at: ")(display break?)(newline)
+                             (display (instruction-text inst))(display " not executed")(newline))
                             (continue-from-breakpoint
                              (set! continue-from-breakpoint #f)
                              ((instruction-execution-proc inst))
@@ -448,10 +448,9 @@
                                 (label-exp-label dest))))
              (lambda () (set-contents! pc insts))))
           ((register-exp? dest)
-           (let ((reg
-                  (get-register machine
-                                (register-exp-reg dest))))
-             ((machine 'add-entry-point) (register-exp-reg dest)) ;log entry point registers
+           (let* ((reg-name (register-exp-reg dest))
+                  (reg (get-register machine reg-name)))
+             ((machine 'add-entry-point) reg-name) ;log entry point registers
              (lambda ()
                (set-contents! pc (get-contents reg)))))
           (else (error "Bad GOTO instruction -- ASSEMBLE"
@@ -511,18 +510,6 @@
         (else
          (error "Unknown expression type -- ASSEMBLE" exp))))
 
-; primitive expressions excluding labels
-(define (make-primitive-exp-no-label exp machine labels)
-  (cond ((constant-exp? exp)
-         (let ((c (constant-exp-value exp)))
-           (lambda () c)))
-        ((register-exp? exp)
-         (let ((r (get-register machine
-                                (register-exp-reg exp))))
-           (lambda () (get-contents r))))
-        (else
-         (error "Invalid expression type -- ASSEMBLE-OP" exp))))
-
 (define (register-exp? exp) (tagged-list? exp 'reg))
 (define (register-exp-reg exp) (cadr exp))
 (define (constant-exp? exp) (tagged-list? exp 'const))
@@ -535,7 +522,11 @@
   (let ((op (lookup-prim (operation-exp-op exp) operations))
         (aprocs
          (map (lambda (e)
-                (make-primitive-exp-no-label e machine labels))
+                ;Exercise 5.9
+                ;disallow label expressions as operands
+                (if (label-exp? e)
+                    (error "Invalid expression type -- ASSEMBLE-OP" e)
+                    (make-primitive-exp e machine labels)))
               (operation-exp-operands exp))))
     (lambda ()
       (apply op (map (lambda (p) (p)) aprocs)))))

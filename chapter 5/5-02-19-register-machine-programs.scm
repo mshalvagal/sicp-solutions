@@ -249,7 +249,6 @@
 (display "Should throw an error\n")
 (define repeat-label-machine
   (make-machine
-   '(a)
    (list (list '+ +))
    '(start
        (goto (label here))
@@ -266,6 +265,17 @@
 |#
 
 
+#|
+;Exercise 5.9
+(display "Exercise 5.9\n")
+(display "Should throw an error\n")
+(define repeat-label-machine
+  (make-machine
+   (list (list '+ +))
+   '(start
+       (assign a (op +) (label start) (const 1))
+     done)))
+|#
 
 ;Exercise 5.11a
 (display "Exercise 5.11a\n")
@@ -421,7 +431,7 @@
   (make-machine
    (list (list '* *) (list '= =) (list '- -))
    '(controller
-       (perform (op initialize-stack))
+       ;(perform (op initialize-stack))
        (assign continue (label fact-done))     ; set up final return address
      fact-loop
        (test (op =) (reg n) (const 1))
@@ -447,38 +457,38 @@
 
 (set-register-contents! rec-factorial-machine 'n 3)
 (start rec-factorial-machine)
-(display "Instruction count: ")
-(rec-factorial-machine 'get-exec-count)
 (display "fact(3) = ")
 (get-register-contents rec-factorial-machine 'val)
+(display "Instruction count: ")
+(rec-factorial-machine 'get-exec-count)
 
 (set-register-contents! rec-factorial-machine 'n 4)
 (start rec-factorial-machine)
-(display "Instruction count: ")
-(rec-factorial-machine 'get-exec-count)
 (display "fact(4) = ")
 (get-register-contents rec-factorial-machine 'val)
+(display "Instruction count: ")
+(rec-factorial-machine 'get-exec-count)
 
 (set-register-contents! rec-factorial-machine 'n 5)
 (start rec-factorial-machine)
-(display "Instruction count: ")
-(rec-factorial-machine 'get-exec-count)
 (display "fact(5) = ")
 (get-register-contents rec-factorial-machine 'val)
+(display "Instruction count: ")
+(rec-factorial-machine 'get-exec-count)
 
 (set-register-contents! rec-factorial-machine 'n 6)
 (start rec-factorial-machine)
-(display "Instruction count: ")
-(rec-factorial-machine 'get-exec-count)
 (display "fact(6) = ")
 (get-register-contents rec-factorial-machine 'val)
+(display "Instruction count: ")
+(rec-factorial-machine 'get-exec-count)
 
 (set-register-contents! rec-factorial-machine 'n 10)
 (start rec-factorial-machine)
-(display "Instruction count: ")
-(rec-factorial-machine 'get-exec-count)
 (display "fact(10) = ")
 (get-register-contents rec-factorial-machine 'val)
+(display "Instruction count: ")
+(rec-factorial-machine 'get-exec-count)
 
 
 (newline)(newline)
@@ -509,6 +519,24 @@
 (display "fact(5) = ")
 (get-register-contents rec-factorial-machine 'val)
 (stop-trace-register rec-factorial-machine 'val)
+
+
+(newline)(newline)
+
+(display "Exercise 5.16-5.18\n")
+(display "Tracing during computation of fact(4)\n")
+(rec-factorial-machine 'trace-on)
+(trace-register rec-factorial-machine 'n)
+(trace-register rec-factorial-machine 'continue)
+(trace-register rec-factorial-machine 'val)
+(set-register-contents! rec-factorial-machine 'n 4)
+(start rec-factorial-machine)
+(display "fact(5) = ")
+(get-register-contents rec-factorial-machine 'val)
+(stop-trace-register rec-factorial-machine 'n)
+(stop-trace-register rec-factorial-machine 'continue)
+(stop-trace-register rec-factorial-machine 'val)
+(rec-factorial-machine 'trace-off)
 
 
 (newline)(newline)

@@ -1,3 +1,4 @@
+#lang sicp
 (define (reverse-lis lis)
   (define (rev-iter lis rev-lis)
     (if (null? lis)
