@@ -77,12 +77,9 @@
        (goto (label count-loop))
      after-car
        (restore tree)
-       (assign tree (op cdr) (reg tree))
-       (assign continue (label after-cdr))
-       (goto (label count-loop))
-     after-cdr
        (restore continue)
-       (goto (reg continue))
+       (assign tree (op cdr) (reg tree))
+       (goto (label count-loop))
      base-case
        (goto (reg continue))
      count-done
