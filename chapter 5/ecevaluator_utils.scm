@@ -6,6 +6,7 @@
            lambda? lambda-parameters lambda-body make-lambda
            if? if-predicate if-consequent if-alternative
            cond->if let->combination let? cond?
+           first-clause-else? cond-clauses cond-actions first-clause-predicate first-clause-actions no-more-clauses? rest-clauses
            begin? begin-actions
            last-exp? first-exp rest-exps
            application? operator operands
@@ -275,6 +276,11 @@
   (eq? (cond-predicate clause) 'else))
 (define (cond-predicate clause) (car clause))
 (define (cond-actions clause) (cdr clause))
+(define (no-more-clauses? exp) (null? exp))
+(define (first-clause-predicate exp) (cond-predicate (car exp)))
+(define (first-clause-actions exp) (cond-actions (car exp)))
+(define (first-clause-else? exp) (cond-else-clause? (car exp)))
+(define (rest-clauses exp) (cdr exp))
 (define (cond->if exp)
   (expand-clauses (cond-clauses exp)))
 (define (expand-clauses clauses)
