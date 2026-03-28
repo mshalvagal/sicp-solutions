@@ -21,7 +21,7 @@
               register-names)
     |#
     ((machine 'install-operations) ops) ; passing a message to install operations
-    ((machine 'install-instruction-sequence) ; passing a message to install instruction sequenc
+    ((machine 'install-instruction-sequence) ; passing a message to install instruction sequence
      (assemble controller-text machine)) ; instruction sequence is converted to the machine representation
     machine))
 
