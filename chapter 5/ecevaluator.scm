@@ -2,6 +2,16 @@
 
 (#%require "register-machine.scm")
 (#%require "ecevaluator_utils.scm")
+(#%require "lexical-addressing-utils.scm")
+(#%require "compiler-lexical-addressing.scm")
+
+(#%provide eceval)
+
+;;new procedure for compiling and return the assembled instructionsc (Exercise 5.48)
+(define (compile-and-assemble exp)
+  (assemble (statements
+             (compile exp 'val 'return the-empty-cenvironment))
+            eceval))
 
 (define eceval-operations
   (list
@@ -61,13 +71,38 @@
    (list 'adjoin-arg adjoin-arg)
    (list 'last-operand? last-operand?)
    (list 'no-more-exps? no-more-exps?)	;for non-tail-recursive machine
-   (list 'get-global-environment get-global-environment))
-   )
+   (list 'get-global-environment get-global-environment)
+
+   (list 'compiled-procedure? compiled-procedure?)
+   (list 'compiled-procedure-entry compiled-procedure-entry)
+   (list 'compiled-procedure-env compiled-procedure-env)
+   (list 'make-compiled-procedure make-compiled-procedure)
+   
+   (list 'lexical-address-lookup lexical-address-lookup)
+   (list 'lexical-address-set! lexical-address-set!)
+  
+   ;; open-coded primitives (Exercise 5.38)
+   (list '+ +)
+   (list '- -)
+   (list '* *)
+   (list '= =)
+   (list 'cons cons)
+   (list 'list list)
+   (list 'false? false?)
+
+   ;; compilation (Exercise 5.48)
+   (list 'compile-and-run? compile-and-run?)
+   (list 'compile-and-run-expression compile-and-run-expression)
+   (list 'compile-and-assemble compile-and-assemble)
+   ))
 
 (define eceval
   (make-machine
    eceval-operations
    '(
+     (assign compapp (label compound-apply))
+     (branch (label external-entry))
+     
      ;;SECTION 5.4.4
      read-eval-print-loop
        (perform (op initialize-stack))
@@ -120,6 +155,8 @@
        (branch (label ev-cond))
        (test (op let?) (reg exp))
        (branch (label ev-let))
+       (test (op compile-and-run?) (reg exp))
+       (branch (label compile-and-run))
        (test (op application?) (reg exp))
        (branch (label ev-application))
        (goto (label unknown-expression-type))
@@ -185,6 +222,8 @@
        (branch (label primitive-apply))
        (test (op compound-procedure?) (reg proc))
        (branch (label compound-apply))
+       (test (op compiled-procedure?) (reg proc))
+       (branch (label compiled-apply))
        (goto (label unknown-procedure-type))
 
      primitive-apply
@@ -201,6 +240,11 @@
                (reg unev) (reg argl) (reg env))
        (assign unev (op procedure-body) (reg proc))
        (goto (label ev-sequence))
+
+     compiled-apply
+       (restore continue)
+       (assign val (op compiled-procedure-entry) (reg proc))
+       (goto (reg val))
 
      ;;;SECTION 5.4.2
      ev-begin
@@ -289,8 +333,21 @@
         (op define-variable!) (reg unev) (reg val) (reg env))
        (assign val (const ok))
        (goto (reg continue))
+
+     external-entry
+       (perform (op initialize-stack))
+       (assign env (op get-global-environment))
+       (assign continue (label print-result))
+       (goto (reg val))
+
+     ;;; Exercise 5.48
+     compile-and-run
+       (assign exp (op compile-and-run-expression) (reg exp))
+       (assign val (op compile-and-assemble) (reg exp))
+       (assign continue (label print-result))
+       (goto (reg val))
      )))
 
 '(EXPLICIT CONTROL EVALUATOR LOADED)
 ;(eceval 'trace-on)
-(start eceval)
+;(start eceval)

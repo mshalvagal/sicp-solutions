@@ -10,6 +10,7 @@
 (#%provide cancel-breakpoint)
 (#%provide cancel-all-breakpoints)
 (#%provide proceed-machine)
+(#%provide assemble)
 
 ; model of the machine is represented as a procedure with local state.
 
@@ -524,7 +525,9 @@
          (map (lambda (e)
                 ;Exercise 5.9
                 ;disallow label expressions as operands
-                (if (label-exp? e)
+                (if (and (label-exp? e)
+                         (not (memq (operation-exp-op exp)
+                                    '(make-compiled-procedure))))
                     (error "Invalid expression type -- ASSEMBLE-OP" e)
                     (make-primitive-exp e machine labels)))
               (operation-exp-operands exp))))

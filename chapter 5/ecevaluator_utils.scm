@@ -12,7 +12,7 @@
            application? operator operands
            no-operands? first-operand rest-operands
            true? false?
-           make-procedure compound-procedure? procedure-parameters procedure-body procedure-environment
+           make-procedure compound-procedure? procedure-parameters procedure-body procedure-environment scan-out-defines
            enclosing-environment first-frame the-empty-environment
            make-frame frame-variables frame-values add-binding-to-frame!
            extend-environment lookup-variable-value set-variable-value! define-variable!
@@ -21,7 +21,9 @@
            apply-in-underlying-scheme apply-primitive-procedure
            prompt-for-input announce-output user-print
            empty-arglist adjoin-arg last-operand?
-           no-more-exps? get-global-environment the-global-environment)
+           compiled-procedure-entry compiled-procedure-env compiled-procedure? make-compiled-procedure
+           compile-and-run? compile-and-run-expression
+           no-more-exps? get-global-environment the-global-environment reset-global-environment!)
 
 (define (self-evaluating? exp)
   (cond ((number? exp) true)
@@ -236,12 +238,14 @@
   (newline) (display string) (newline))
 
 (define (user-print object)
-  (if (compound-procedure? object)
-      (display (list 'compound-procedure
-                     (procedure-parameters object)
-                     (procedure-body object)
-                     '<procedure-env>))
-      (display object)))
+  (cond ((compound-procedure? object)
+         (display (list 'compound-procedure
+                        (procedure-parameters object)
+                        (procedure-body object)
+                        '<procedure-env>)))
+        ((compiled-procedure? object)
+         (display '<compiled-procedure>))
+        (else (display object))))
 
 ;;; Simulation of new machine operations needed by
 ;;;  eceval machine (not used by compiled code)
@@ -318,3 +322,56 @@
   the-global-environment)
 ;; will do following when ready to run, not when load this file
 (define the-global-environment (setup-environment))
+
+(define (reset-global-environment!)
+  (set! the-global-environment (setup-environment)))
+
+
+;;; Exercise 5.43
+(define (first-spec specs-exp) (car specs-exp))
+(define (rest-specs specs-exp) (cdr specs-exp))
+(define (list-of-vars specs-exp)
+  (if (null? specs-exp)
+      '()
+      (cons (let-spec-var (first-spec specs-exp))
+            (list-of-vars (rest-specs specs-exp)))))
+(define (list-of-exps specs-exp)
+  (if (null? specs-exp)
+      '()
+      (cons (let-spec-exp (first-spec specs-exp))
+            (list-of-exps (rest-specs specs-exp)))))
+
+(define (make-assignment var val) (list 'set! var val))
+(define (make-let list-specs body)
+  (cons 'let (cons list-specs body)))
+
+(define (scan-out-defines proc-body)
+  (define (modify-body! remaining-exps)
+    (if (null? remaining-exps)
+        '()
+        (let ((first-exp (car remaining-exps)))
+          (if (definition? first-exp)
+              (begin
+                (set-car! remaining-exps
+                          (make-assignment (definition-variable first-exp)
+                                           (definition-value first-exp)))
+                (cons (definition-variable first-exp)
+                      (modify-body! (cdr remaining-exps))))
+              (modify-body! (cdr remaining-exps))))))
+  (let ((defined-var-names (modify-body! proc-body)))
+    (if (null? defined-var-names)
+        proc-body
+        (list (make-let (map (lambda (var-name) (list var-name '*unassigned*))
+                             defined-var-names)
+                        proc-body)))))
+
+(define (make-compiled-procedure entry env)
+  (list 'compiled-procedure entry env))
+(define (compiled-procedure? proc)
+  (tagged-list? proc 'compiled-procedure))
+(define (compiled-procedure-entry c-proc) (cadr c-proc))
+(define (compiled-procedure-env c-proc) (caddr c-proc))
+
+;;; Exercise 5.48
+(define (compile-and-run? exp) (tagged-list? exp 'compile-and-run))
+(define (compile-and-run-expression exp) (text-of-quotation (cadr exp)))

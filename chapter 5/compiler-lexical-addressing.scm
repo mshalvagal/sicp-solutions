@@ -1,38 +1,38 @@
 #lang sicp
 
 (#%require "ecevaluator_utils.scm")
+(#%require "lexical-addressing-utils.scm")
 
-(#%provide compile-efficient)
+(#%provide compile statements)
 
 ;; 5.5.1
-(define (compile-efficient exp target linkage)
+(define (compile exp target linkage cenv)
   (cond ((self-evaluating? exp)
          (compile-self-evaluating exp target linkage))
         ((quoted? exp) (compile-quoted exp target linkage))
         ((variable? exp)
-         (compile-variable exp target linkage))
+         (compile-variable exp target linkage cenv))
         ((assignment? exp)
-         (compile-assigment exp target linkage))
+         (compile-assigment exp target linkage cenv))
         ((definition? exp)
-         (compile-definition exp target linkage))
+         (compile-definition exp target linkage cenv))
         ((if? exp)
-         (compile-if exp target linkage))
+         (compile-if exp target linkage cenv))
+        ((let? exp)
+         (compile-let exp target linkage cenv))
         ((lambda? exp)
-         (compile-lambda exp target linkage))
+         (compile-lambda exp target linkage cenv))
         ((begin? exp)
          (compile-sequence (begin-actions exp)
                            target
-                           linkage))
-        ((open-add? exp)
-         (compile-open-add exp target linkage))
-        ((open-sub? exp)
-         (compile-open-sub exp target linkage))
-        ((open-mul? exp)
-         (compile-open-mul exp target linkage))
-        ((open-eq? exp)
-         (compile-open-eq exp target linkage))
+                           linkage
+                           cenv))
+        ((open-add? exp cenv) (compile-open-add exp target linkage cenv))
+        ((open-sub? exp cenv) (compile-open-sub exp target linkage cenv))
+        ((open-mul? exp cenv) (compile-open-mul exp target linkage cenv))
+        ((open-eq? exp cenv)  (compile-open-eq exp target linkage cenv))
         ((application? exp)
-         (compile-application exp target linkage))
+         (compile-application exp target linkage cenv))
         (else
          (error "Unknown expression type -- COMPILE" exp))))
 
@@ -70,34 +70,69 @@
    (make-instruction-sequence '() (list target)
                               `((assign ,target (const ,(text-of-quotation exp)))))))
 
-(define (compile-variable exp target linkage)
+(define (compile-variable exp target linkage cenv)
   (end-with-linkage
    linkage
-   (make-instruction-sequence '(env) (list target)
-                              `((assign ,target
-                                        (op lookup-variable-value)
-                                        (const ,exp)
-                                        (reg env))))))
+   (let ((address (find-variable exp cenv)))
+     (if (eq? address 'not-found)
+         (make-instruction-sequence '(env) (list target)
+                                    `((assign ,target
+                                              (op lookup-variable-value)
+                                              (const ,exp)
+                                              (reg env))))
+         (make-instruction-sequence '(env) (list target)
+                                    `((assign ,target
+                                              (op lexical-address-lookup)
+                                              (const ,address)
+                                              (reg env))))))))
 
-(define (compile-assigment exp target linkage)
+
+;; Exercise 5.41
+(define (find-variable var cenv)
+  (define (var-loop vars i)
+    (cond ((null? vars) 'not-found)
+          ((eq? (car vars) var) i)
+          (else (var-loop (cdr vars) (+ i 1)))))
+  (define (env-loop env n)
+    (if (null? env)
+        'not-found
+        (let ((var-idx (var-loop (car env) 0)))
+          (if (eq? var-idx 'not-found)
+              (env-loop (cdr env) (+ n 1))
+              (make-lexical-address n var-idx)))))
+  (env-loop cenv 0))
+
+;(find-variable 'c '((y z) (a b c d e) (x y)))
+;(find-variable 'x '((y z) (a b c d e) (x y)))
+;(find-variable 'w '((y z) (a b c d e) (x y)))
+
+(define (compile-assigment exp target linkage cenv)
   (let ((var (assignment-variable exp))
         (get-value-code
-         (compile-efficient (assignment-value exp) 'val 'next)))
+         (compile (assignment-value exp) 'val 'next cenv)))
     (end-with-linkage
      linkage
      (preserving '(env)
                  get-value-code
-                 (make-instruction-sequence '(env val) (list target)
-                                            `((perform (op set-variable-value!)
-                                                       (const ,var)
-                                                       (reg val)
-                                                       (reg env))
-                                              (assign ,target (const ok))))))))
+                 (let ((address (find-variable var cenv)))
+                   (if (eq? address 'not-found)
+                       (make-instruction-sequence '(env val) (list target)
+                                                  `((perform (op set-variable-value!)
+                                                             (const ,var)
+                                                             (reg val)
+                                                             (reg env))
+                                                    (assign ,target (const ok))))
+                       (make-instruction-sequence '(env val) (list target)
+                                                  `((perform (op lexical-address-set!)
+                                                             (const ,address)
+                                                             (reg val)
+                                                             (reg env))
+                                                    (assign ,target (const ok))))))))))
 
-(define (compile-definition exp target linkage)
+(define (compile-definition exp target linkage cenv)
   (let ((var (definition-variable exp))
         (get-value-code
-         (compile-efficient (definition-value exp) 'val 'next)))
+         (compile (definition-value exp) 'val 'next cenv)))
     (end-with-linkage
      linkage
      (preserving '(env)
@@ -121,19 +156,19 @@
   (set! label-counter 0))
 
 
-(define (compile-if exp target linkage)
+(define (compile-if exp target linkage cenv)
   (let ((t-branch (make-label 'true-branch))
         (f-branch (make-label 'false-branch))
         (after-if (make-label 'after-if)))
     (let ((consequent-linkage
            (if (eq? linkage 'next) after-if linkage)))
-      (let ((p-code (compile-efficient (if-predicate exp) 'val 'next))
+      (let ((p-code (compile (if-predicate exp) 'val 'next cenv))
             (c-code
-             (compile-efficient
-              (if-consequent exp) target consequent-linkage))
+             (compile
+              (if-consequent exp) target consequent-linkage cenv))
             (a-code
-             (compile-efficient
-              (if-alternative exp) target linkage)))
+             (compile
+              (if-alternative exp) target linkage cenv)))
         (preserving '(env continue)
                     p-code
                     (append-instruction-sequences
@@ -145,21 +180,14 @@
                       (append-instruction-sequences f-branch a-code))
                      after-if))))))
 
-(define (compile-sequence seq target linkage)
+(define (compile-sequence seq target linkage cenv)
   (if (last-exp? seq)
-      (compile-efficient (first-exp seq) target linkage)
+      (compile (first-exp seq) target linkage cenv)
       (preserving '(env continue)
-                  (compile-efficient (first-exp seq) target 'next)
-                  (compile-sequence (rest-exps seq) target linkage))))
+                  (compile (first-exp seq) target 'next cenv)
+                  (compile-sequence (rest-exps seq) target linkage cenv))))
 
-(define (make-compiled-procedure entry env)
-  (list 'compiled-procedure entry env))
-(define (compiled-procedure? proc)
-  (tagged-list? proc 'compiled-procedure))
-(define (compiled-procedure-entry c-proc) (cadr c-proc))
-(define (compiled-procedure-env c-proc) (caddr c-proc))
-
-(define (compile-lambda exp target linkage)
+(define (compile-lambda exp target linkage cenv)
   (let ((proc-entry (make-label 'entry))
         (after-lambda (make-label 'after-lambda)))
     (let ((lambda-linkage
@@ -173,10 +201,10 @@
                                               (op make-compiled-procedure)
                                               (label ,proc-entry)
                                               (reg env)))))
-        (compile-lambda-body exp proc-entry))
+        (compile-lambda-body exp proc-entry cenv))
        after-lambda))))
 
-(define (compile-lambda-body exp proc-entry)
+(define (compile-lambda-body exp proc-entry cenv)
   (let ((formals (lambda-parameters exp)))
     (append-instruction-sequences
      (make-instruction-sequence '(env proc argl) '(env)
@@ -187,13 +215,18 @@
                                           (const ,formals)
                                           (reg argl)
                                           (reg env))))
-     (compile-sequence (lambda-body exp) 'val 'return))))
+     ;; Exercise 5.40, 5.43
+     (compile-sequence (scan-out-defines (lambda-body exp)) 'val 'return
+                       (extend-cenv formals cenv)))))
+
+(define (extend-cenv formals cenv)
+  (cons formals cenv))
 
 ;; 5.5.3
-(define (compile-application exp target linkage)
-  (let ((proc-code (compile-efficient (operator exp) 'proc 'next))
+(define (compile-application exp target linkage cenv)
+  (let ((proc-code (compile (operator exp) 'proc 'next cenv))
         (operand-codes
-         (map (lambda (operand) (compile-efficient operand 'val 'next))
+         (map (lambda (operand) (compile operand 'val 'next cenv))
               (operands exp))))
     (preserving '(env continue)
                 proc-code
@@ -234,27 +267,37 @@
 (define (compile-procedure-call target linkage)
   (let ((primitive-branch (make-label 'primitive-branch))
         (compiled-branch (make-label 'compiled-branch))
+        (compound-branch (make-label 'compound-branch))
         (after-call (make-label 'after-call)))
     (let ((compiled-linkage
+           (if (eq? linkage 'next) after-call linkage))
+          (compound-linkage
            (if (eq? linkage 'next) after-call linkage)))
       (append-instruction-sequences
        (make-instruction-sequence '(proc) '()
                                   `((test (op primitive-procedure?) (reg proc))
                                     (branch (label ,primitive-branch))))
+       (make-instruction-sequence '(proc) '()
+                                  `((test (op compound-procedure?) (reg proc))
+                                    (branch (label ,compound-branch))))
        (parallel-instruction-sequences
         (append-instruction-sequences
          compiled-branch
          (compile-proc-appl target compiled-linkage))
-        (append-instruction-sequences
-         primitive-branch
-         (end-with-linkage
-          linkage
-          (make-instruction-sequence '(proc argl)
-                                     (list target)
-                                     `((assign ,target
-                                               (op apply-primitive-procedure)
-                                               (reg proc)
-                                               (reg argl)))))))
+        (parallel-instruction-sequences
+         (append-instruction-sequences
+          compound-branch
+          (compound-proc-appl target compound-linkage))
+         (append-instruction-sequences
+          primitive-branch
+          (end-with-linkage
+           linkage
+           (make-instruction-sequence '(proc argl)
+                                      (list target)
+                                      `((assign ,target
+                                                (op apply-primitive-procedure)
+                                                (reg proc)
+                                                (reg argl))))))))
        after-call))))
 
 (define all-regs '(env proc val argl continue arg1 arg2))
@@ -284,6 +327,30 @@
                                       (goto (reg val)))))
         ((and (not (eq? target 'val)) (eq? linkage 'return))
          (error "return linkage, target not val -- COMPILE"
+                target))))
+
+(define (compound-proc-appl target linkage)
+  (cond ((and (eq? target 'val) (not (eq? linkage 'return)))
+         (make-instruction-sequence '(proc compapp) all-regs
+                                    `((assign continue (label ,linkage))
+                                      (save continue)
+                                      (goto (reg compapp)))))
+        ((and (not (eq? target 'val))
+              (not (eq? linkage 'return)))
+         (let ((proc-return (make-label 'proc-return)))
+           (make-instruction-sequence '(proc compapp) all-regs
+                                      `((assign continue (label ,proc-return))
+                                        (save continue)
+                                        (goto (reg compapp))
+                                        ,proc-return
+                                        (assign ,target (reg val))
+                                        (goto (label ,linkage))))))
+        ((and (eq? target 'val) (eq? linkage 'return))
+         (make-instruction-sequence '(proc continue compapp) all-regs
+                                    '((save continue)
+                                      (goto (reg compapp)))))
+        ((and (not (eq? target 'val)) (eq? linkage 'return))
+         (error "return linkage, target not val -- COMPILE COMPOUND"
                 target))))
 
 ;; 5.5.4
@@ -371,67 +438,74 @@
                (registers-modified seq2))
    (append (statements seq1) (statements seq2))))
 
+(define (compile-let exp target linkage cenv)
+  (compile (let->combination exp) target linkage cenv))
+
+
 ;;Exercise 5.38
-(define (spread-arguments operand-list)
-  (let ((operand-1-code (compile-efficient (car operand-list) 'arg1 'next))
-        (operand-2-code (compile-efficient (cadr operand-list) 'arg2 'next)))
+(define (spread-arguments operand-list cenv)
+  (let ((operand-1-code (compile (car operand-list) 'arg1 'next cenv))
+        (operand-2-code (compile (cadr operand-list) 'arg2 'next cenv)))
     (preserving '(env)
                 operand-1-code
                 (preserving '(arg1)
                             operand-2-code
                             (make-instruction-sequence '(arg1 arg2) '() '())))))
 
-(define (open-add? exp)
-  (tagged-list? exp '+))
-(define (open-sub? exp)
+(define (open-add? exp cenv)
+  (and (tagged-list? exp '+)
+       (eq? (find-variable '+ cenv) 'not-found)))
+(define (open-sub? exp cenv)
   (and (tagged-list? exp '-)
-       (= 2 (length (operands exp)))))
-(define (open-mul? exp)
-  (tagged-list? exp '*))
-(define (open-eq? exp)
+       (= 2 (length (operands exp)))
+       (eq? (find-variable '- cenv) 'not-found)))
+(define (open-mul? exp cenv)
+  (and (tagged-list? exp '*)
+       (eq? (find-variable '* cenv) 'not-found)))
+(define (open-eq? exp cenv)
   (and (tagged-list? exp '=)
-       (= 2 (length (operands exp)))))
+       (= 2 (length (operands exp)))
+       (eq? (find-variable '= cenv) 'not-found)))
 
-(define (compile-open-add exp target linkage)
+(define (compile-open-add exp target linkage cenv)
   (let ((ops (operands exp)))
     (cond ((null? (cdr ops))
-           (compile-efficient (car ops) target linkage))
+           (compile (car ops) target linkage cenv))
           ((null? (cddr ops))
            (end-with-linkage
             linkage
-            (append-instruction-sequences (spread-arguments ops)
+            (append-instruction-sequences (spread-arguments ops cenv)
                                           (make-instruction-sequence '(arg1 arg2) (list target)
                                                                      `((assign ,target (op +) (reg arg1) (reg arg2)))))))
           (else
-           (compile-open-add (split-open-op exp) target linkage)))))
+           (compile-open-add (split-open-op exp) target linkage cenv)))))
 
-(define (compile-open-sub exp target linkage)
+(define (compile-open-sub exp target linkage cenv)
   (end-with-linkage
    linkage 
-   (append-instruction-sequences (spread-arguments (operands exp))
+   (append-instruction-sequences (spread-arguments (operands exp) cenv)
                                  (make-instruction-sequence '(arg1 arg2) (list target)
                                                             `((assign ,target (op -) (reg arg1) (reg arg2)))))))
 
-(define (compile-open-mul exp target linkage)
+(define (compile-open-mul exp target linkage cenv)
   (let ((ops (operands exp)))
     (cond ((null? (cdr ops))
-           (compile-efficient (car ops) target linkage))
+           (compile (car ops) target linkage cenv))
           ((null? (cddr ops))
            (end-with-linkage
             linkage
-            (append-instruction-sequences (spread-arguments ops)
+            (append-instruction-sequences (spread-arguments ops cenv)
                                           (make-instruction-sequence '(arg1 arg2) (list target)
                                                                      `((assign ,target (op *) (reg arg1) (reg arg2)))))))
           (else
-           (compile-open-mul (split-open-op exp) target linkage)))))
+           (compile-open-mul (split-open-op exp) target linkage cenv)))))
 
-(define (compile-open-eq exp target linkage)
+(define (compile-open-eq exp target linkage cenv)
   (end-with-linkage
    linkage 
-   (append-instruction-sequences (spread-arguments (operands exp))
+   (append-instruction-sequences (spread-arguments (operands exp) cenv)
                                  (make-instruction-sequence '(arg1 arg2) (list target)
                                                             `((assign ,target (op =) (reg arg1) (reg arg2)))))))
-
 
 (define (split-open-op exp)
   (let ((op (operator exp))
