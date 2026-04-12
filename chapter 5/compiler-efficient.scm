@@ -2,7 +2,7 @@
 
 (#%require "ecevaluator_utils.scm")
 
-(#%provide compile-efficient)
+(#%provide compile-efficient statements)
 
 ;; 5.5.1
 (define (compile-efficient exp target linkage)
@@ -17,12 +17,16 @@
          (compile-definition exp target linkage))
         ((if? exp)
          (compile-if exp target linkage))
+        ((cond? exp)
+         (compile-efficient (cond->if exp) target linkage))
         ((lambda? exp)
          (compile-lambda exp target linkage))
         ((begin? exp)
          (compile-sequence (begin-actions exp)
                            target
                            linkage))
+        ((let? exp)
+         (compile-efficient (let->combination exp) target linkage))
         ((open-add? exp)
          (compile-open-add exp target linkage))
         ((open-sub? exp)
